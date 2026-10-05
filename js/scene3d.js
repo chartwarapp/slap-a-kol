@@ -53,6 +53,7 @@ SAK.Scene3D = (function () {
   let particles = [], rings = [];
   let candles = [], coins = [];
   let shake = 0, time = 0, mode = 'menu';
+  let koCam = null; // { track:Fighter, until:number } — pullback + follow loser
   const camBase = { pos: new T.Vector3(), look: new T.Vector3() };
   const camCur = { pos: new T.Vector3(), look: new T.Vector3() };
 
@@ -239,9 +240,11 @@ SAK.Scene3D = (function () {
       // knockout ballistic flight
       if (this.ko) {
         const k = this.ko;
-        k.vel.y -= 14 * dt;
+        k.vel.y -= 11.5 * dt; // slightly floatier cartoon arc
         this.root.position.addScaledVector(k.vel, dt);
-        this.root.rotation.x += k.spin.x * dt; this.root.rotation.z += k.spin.z * dt;
+        this.root.rotation.x += k.spin.x * dt;
+        this.root.rotation.y += (k.spin.y || 0) * dt;
+        this.root.rotation.z += k.spin.z * dt;
         return;
       }
       // springs
@@ -661,8 +664,10 @@ SAK.Scene3D = (function () {
       // side three-quarter view: both faces + the slapping arms read clearly
       camBase.look.set(0, 1.75, 0);
       const dir = new T.Vector3(1, 0.42, 0.42).normalize();
-      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.0 * k);
+      const pull = koCam ? 1.48 : 1; // zoom out further during KO fly-out
+      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.0 * k * pull);
       camBase.look.y -= 0.35 * (k - 1); // leave room for the meter at the bottom
+      if (koCam) { camBase.pos.y += 0.85; camBase.look.y = Math.max(0.55, camBase.look.y - 0.35); }
     }
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
@@ -683,14 +688,24 @@ SAK.Scene3D = (function () {
     }
     for (const c of coins) { c.rotation.z += dt * 1.5; c.position.y += Math.sin(time * 1.3 + c.userData.phase) * 0.003; }
 
-    // smooth camera + shake
-    camCur.pos.lerp(camBase.pos, 1 - Math.pow(0.001, dt));
-    camCur.look.lerp(camBase.look, 1 - Math.pow(0.001, dt));
+    // KO camera: keep pulling back + track the flyer so the smack-out reads clearly
+    if (koCam) {
+      const F = koCam.track;
+      if (F && F.root) {
+        const fly = F.root.position;
+        camBase.look.set(fly.x * 0.35, Math.max(0.6, fly.y * 0.45 + 0.9), fly.z * 0.25);
+      }
+      if (time > koCam.until) koCam = null;
+    }
+    // smooth camera + shake (snappier during KO pullback)
+    const camLerp = koCam ? (1 - Math.pow(0.00005, dt)) : (1 - Math.pow(0.001, dt));
+    camCur.pos.lerp(camBase.pos, camLerp);
+    camCur.look.lerp(camBase.look, camLerp);
     camera.position.copy(camCur.pos);
     if (shake > 0) {
       camera.position.x += (Math.random() - 0.5) * shake;
       camera.position.y += (Math.random() - 0.5) * shake;
-      shake = Math.max(0, shake - dt * 1.6);
+      shake = Math.max(0, shake - dt * (koCam ? 1.1 : 1.6));
     }
     camera.lookAt(camCur.look);
     renderer.render(scene, camera);
@@ -745,8 +760,10 @@ SAK.Scene3D = (function () {
 
   function resetFight() {
     SAK.Tween.clear();
+    koCam = null;
     if (player) { player.resetPose(); player.setFire(false); }
     if (kol) { kol.resetPose(); kol.setFire(false); }
+    if (mode === 'fight' || mode === 'arena') frameCamera();
   }
 
   /**
@@ -793,20 +810,47 @@ SAK.Scene3D = (function () {
     await SAK.Tween.to(p, { lift: 0.12, swing: 0, elbow: 0.15, twist: 0, lean: 0, lunge: 0 }, 0.38, E.inOutQuad);
   }
 
-  /** Send the loser flying backwards off the ring. Resolves when done. */
+  /** Send the loser flying backwards off the ring. Resolves when done.
+   *  Extra camera pullback + stronger cartoon fly-out so the KO reads clearly. */
   async function knockout(who) {
     const F = who === 'player' ? player : kol;
     F.xEyes.visible = true; F.eyes.visible = false;
     F.mouth.scale.set(1, 3, 1);
+
+    // Impact beat: big shake + star burst + shock rings (no gore)
+    const hp = F.headWorld();
+    shake = 1.2;
+    burst(hp, ['#39ff88', '#ff4fd8', '#ffd23f', '#ffffff', '#ff7a9a'], 58, 8.5);
+    ring(hp, '#ffd23f');
+    ring(hp.clone().add(new T.Vector3(0, 0.12, 0)), '#ff4fd8');
+    await wait(0.1); // tiny cartoon hit-stop
+
+    // Stronger fly-out: higher arc, farther smack, more spin
     // facing +1 => fly to -z (away from camera); player flies towards +z / camera-left
     F.ko = {
-      vel: new T.Vector3(-3.5 + Math.random() * 1.5, 10 + Math.random() * 2, -F.facing * 9.5),
-      spin: new T.Vector3(-F.facing * (12 + Math.random() * 6), Math.random() * 6, 9)
+      vel: new T.Vector3(-5.2 + Math.random() * 2.2, 13.5 + Math.random() * 3, -F.facing * (13.5 + Math.random() * 2)),
+      spin: new T.Vector3(-F.facing * (18 + Math.random() * 8), 5 + Math.random() * 8, 14 + Math.random() * 6)
     };
-    shake = 0.75;
-    // cartoon "star" burst at launch
-    burst(F.headWorld(), ['#39ff88', '#ff4fd8', '#ffd23f', '#ffffff'], 40, 6);
-    await wait(1.6);
+    shake = Math.max(shake, 0.7);
+    burst(F.headWorld(), ['#ffd23f', '#ffffff', '#39ff88'], 24, 5);
+
+    // Camera pullback (~45% further + slightly higher) so you see them leave the ring
+    const dir = camBase.pos.clone().sub(camBase.look).normalize();
+    const dist = camBase.pos.distanceTo(camBase.look);
+    camBase.pos.copy(camBase.look).addScaledVector(dir, dist * 1.48);
+    camBase.pos.y += 0.85;
+    camBase.look.y = Math.max(0.55, camBase.look.y - 0.35);
+    // Widen FOV briefly for a dramatic establishing feel
+    const fov0 = camera.fov;
+    camera.fov = Math.min(58, fov0 + 10);
+    camera.updateProjectionMatrix();
+    koCam = { track: F, until: time + 2.05 };
+
+    await wait(2.05);
+    koCam = null;
+    camera.fov = fov0;
+    camera.updateProjectionMatrix();
+    frameCamera(); // restore fight framing for result transition
   }
 
   function setFireArmed(on) { if (player) player.setFire(on); }
