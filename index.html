@@ -10,7 +10,7 @@
   <!-- Chunky game font (optional – falls back to system fonts offline) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=accounts-1" />
+  <link rel="stylesheet" href="css/style.css?v=shop-hp-1" />
 </head>
 <body>
 <div id="app">
@@ -48,6 +48,7 @@
           <button id="btn-connect" class="btn btn-purple">👛 CONNECT WALLET<small class="btn-sub">Solana · coming soon</small></button>
           <button id="btn-vault" class="btn btn-green">🏦 STAKE PTS<small class="btn-sub" id="vault-sub">earn yield + boost</small></button>
         </div>
+        <button id="btn-shop" class="btn btn-yellow">🛒 SHOP / UPGRADES<small class="btn-sub" id="shop-sub">❤ HEALTH · ✊ POWER</small></button>
         <button id="btn-rescue" class="btn btn-grey hidden">🛟 BROKE? CLAIM FREE PTS</button>
       </div>
       <div id="menu-stats" class="menu-stats"></div>
@@ -60,6 +61,7 @@
     <div class="pick-header">
       <button class="icon-btn" data-nav="menu" aria-label="Back">←</button>
       <h2>CHOOSE YOUR KOL</h2>
+      <button class="icon-btn" id="btn-shop-pick" aria-label="Shop">🛒</button>
     </div>
     <div class="pick-sheet">
       <div id="kol-detail" class="kol-detail"></div>
@@ -287,6 +289,27 @@
     </div>
   </div>
 
+
+  <div id="modal-shop" class="modal hidden">
+    <div class="modal-card shop-card">
+      <h3>🛒 SHOP / UPGRADES</h3>
+      <p class="fine dark">Spend PTS on permanent fighter upgrades. Health raises max HP; Power hits harder. Power-ups (Golden Fist / Helmet / Rage) are bought mid-fight from the rail.</p>
+      <div class="shop-stats" id="shop-stats"></div>
+      <div class="upgrade-bar shop-upgrades" id="shop-upgrades">
+        <button class="upg-btn upg-health" data-upgrade="health" type="button">
+          <span class="upg-ico">❤</span><span class="upg-title">HEALTH</span>
+          <span class="upg-lvl" data-lvl></span><span class="upg-cost"><span class="pts sm">★</span><b data-cost></b></span>
+        </button>
+        <button class="upg-btn upg-power" data-upgrade="power" type="button">
+          <span class="upg-ico">✊</span><span class="upg-title">POWER</span>
+          <span class="upg-lvl" data-lvl></span><span class="upg-cost"><span class="pts sm">★</span><b data-cost></b></span>
+        </button>
+      </div>
+      <p class="fine dark" id="shop-note">❤ +20 max HP per level · ✊ +3 power per level</p>
+      <button class="btn btn-grey" data-close>CLOSE</button>
+    </div>
+  </div>
+
   <div id="modal-settings" class="modal hidden">
     <div class="modal-card">
       <h3>SETTINGS</h3>
@@ -307,18 +330,18 @@
 
 <!-- Three.js r158 (classic build, vendored so the game works offline / from file://) -->
 <script src="vendor/three.min.js"></script>
-<script src="js/config.js?v=accounts-1"></script>
-<script src="js/roster.js?v=accounts-1"></script>
-<script src="js/storage.js?v=accounts-1"></script>
-<script src="js/account.js?v=accounts-1"></script>
-<script src="js/wallet.js?v=accounts-1"></script>
-<script src="js/economy.js?v=accounts-1"></script>
-<script src="js/matchmaking.js?v=accounts-1"></script>
-<script src="js/leaderboard.js?v=accounts-1"></script>
-<script src="js/audio.js?v=accounts-1"></script>
-<script src="js/avatars.js?v=accounts-1"></script>
-<script src="js/scene3d.js?v=accounts-1"></script>
-<script src="js/meter.js?v=accounts-1"></script>
-<script src="js/game.js?v=accounts-1"></script>
+<script src="js/config.js?v=shop-hp-1"></script>
+<script src="js/roster.js?v=shop-hp-1"></script>
+<script src="js/storage.js?v=shop-hp-1"></script>
+<script src="js/account.js?v=shop-hp-1"></script>
+<script src="js/wallet.js?v=shop-hp-1"></script>
+<script src="js/economy.js?v=shop-hp-1"></script>
+<script src="js/matchmaking.js?v=shop-hp-1"></script>
+<script src="js/leaderboard.js?v=shop-hp-1"></script>
+<script src="js/audio.js?v=shop-hp-1"></script>
+<script src="js/avatars.js?v=shop-hp-1"></script>
+<script src="js/scene3d.js?v=shop-hp-1"></script>
+<script src="js/meter.js?v=shop-hp-1"></script>
+<script src="js/game.js?v=shop-hp-1"></script>
 </body>
 </html>

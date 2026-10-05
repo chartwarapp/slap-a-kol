@@ -30,6 +30,7 @@
   let RevealDial = null;                 // inline post-lock dual-needle dial
   let aiLockTimer = 0, roundTimer = 0;
   let revealDismiss = null;              // finish() for tap-to-continue on inline reveal
+  let fightToken = 0;                    // guards intro timers across rematches
 
   /* ----------------------------------------------------------- derived stats */
   const playerMaxHp = () => SAK.PLAYER.baseHp + S.upgrades.health * SAK.PLAYER.hpPerLevel;
@@ -152,6 +153,7 @@
       + (V.boost ? `<span class="boost-tag">⚡ +${Math.round(V.boost * 100)}% boost</span>` : '');
     $('#set-wallet').textContent = on ? `Mock address: ${W.address}` : 'Wallet not connected (placeholder)';
     $('#btn-disconnect').classList.toggle('hidden', !on);
+    renderShopStats();
   }
 
   /* ----------------------------------------------------------------- screens */
@@ -539,12 +541,21 @@
     S.upgrades[type]++;
     SAK.Storage.save();
     A.coin(); haptic(20);
-    if (F && !F.started) { F.pMax = playerMaxHp(); F.pHp = F.pMax; renderRoundScore(); }  // applies before 1st slap
+    if (F) {
+      if (type === 'health') {
+        const newMax = playerMaxHp(), delta = newMax - F.pMax;
+        F.pMax = newMax;
+        if (delta > 0) F.pHp = Math.min(F.pMax, F.pHp + delta);
+        renderHp();
+      }
+      // Power applies on the next landed slap via playerPower()
+    }
     if (btn) {
       const r = btn.getBoundingClientRect(), app = appRect();
       floatText(r.left - app.left + r.width / 2, r.top - app.top, type === 'health' ? `+${SAK.PLAYER.hpPerLevel} HP` : `+${SAK.PLAYER.powerPerLevel} POWER`, 'good');
     }
     renderUpgrades();
+    renderShopStats();
   }
 
 
@@ -601,10 +612,12 @@
     setWaitUI(false);
     renderHp(true); renderUpgrades(); renderPowerups(); renderRoundScore();
     if (Scene) { Scene.setHelmet(false); Scene.setRage(false); }
+    const token = ++fightToken;
+    F.token = token;
     show('fight');
     sayPlayer(playerPhrase());
-    setTimeout(() => F && F.kol === kol && say(pick(kol.taunts)), 900);
-    setTimeout(() => F && F.kol === kol && startChallengeRound(), 700);
+    setTimeout(() => F && F.token === token && say(pick(kol.taunts)), 900);
+    setTimeout(() => F && F.token === token && startChallengeRound(), 700);
   }
 
   function renderRoundScore() {
@@ -616,18 +629,7 @@
       // ROUND label = the round in play; it only advances when startChallengeRound() bumps C.round
       // (score may update at resolve, but the label holds through reveal, slap and KO)
       + `<span class="rs-meta">ROUND ${Math.max(1, Math.min(C.round, C.bestOf))} · FIRST TO ${C.winsNeeded}</span>`;
-    // HP bars = rounds you can still lose before KO: the round LOSER's bar drops
-    const pLeft = Math.max(0, C.winsNeeded - C.kWins), kLeft = Math.max(0, C.winsNeeded - C.pWins);
-    const set = (who, left) => {
-      const pct = left / C.winsNeeded * 100;
-      $(`#${who}-hp`).style.width = pct + '%';
-      $(`#${who}-hp-lag`).style.width = pct + '%';
-      $(`#${who}-hp`).classList.toggle('low', left <= 1);
-      $(`#${who}-hp-txt`).textContent = `${left} / ${C.winsNeeded}`;
-    };
-    set('p', pLeft); set('k', kLeft);
-    if (Scene && Scene.player) Scene.player.setDamage(1 - pLeft / C.winsNeeded);
-    if (Scene && Scene.kol) Scene.kol.setDamage(1 - kLeft / C.winsNeeded);
+    // Real HP lives in renderHp() — round wins decide the match; HP is flavour that drops on landed hits
   }
 
   function stopMeters() {
@@ -803,7 +805,7 @@
   }
 
 
-  const REVEAL_MS = 2200;
+  const REVEAL_MS = 1200;
 
   function hideLockReveal() {
     if (revealDismiss) {
@@ -924,15 +926,22 @@
     }
     renderPowerups();
 
-    // Record "damage" flavour numbers for duel-style result copy
+    // Real damage (Power upgrade, Rage, Helmet, Golden Fist). Round wins still decide the match.
     let grade = attackerWins ? atk.zone : def.zone;
     // Golden Fist never whiffs: a landed fist slap grades at least SOLID
     if (fire && grade.mult < 1) grade = SAK.METER.zones.find(z => z.id === 'good') || grade;
     const basePow = playerIsAtk ? playerPower() : F.kol.power;
     const dmg = Math.round(basePow * Math.max(0.25, grade.mult) * (fire ? SAK.POWERUPS.fist.mult : 1) * (rage ? SAK.POWERUPS.rage.damageMult : 1) * (helmet ? SAK.POWERUPS.helmet.damageMult : 1));
     if (attackerWins) {
-      if (playerIsAtk) { F.duel.p = dmg; F.hits++; F.maxHit = Math.max(F.maxHit, dmg); if (grade.id === 'perfect') F.perfects++; }
-      else { F.duel.k = dmg; }
+      if (playerIsAtk) {
+        F.duel.p = dmg; F.hits++; F.maxHit = Math.max(F.maxHit, dmg); if (grade.id === 'perfect') F.perfects++;
+        // Never below 1 HP until the deciding round KO sets 0
+        F.kHp = Math.max(1, F.kHp - dmg);
+      } else {
+        F.duel.k = dmg;
+        F.pHp = Math.max(1, F.pHp - dmg);
+      }
+      renderHp();
     } else {
       // defender won — record a small "brace" value
       if (playerIsAtk) F.duel.k = Math.round(dmg * 0.6);
@@ -943,7 +952,7 @@
     if (playerWonRound) C.pWins++; else C.kWins++;
     renderRoundScore();
 
-    // Reveal WHERE they locked (private until both locked) — YOU vs THEM needles
+    // Reveal WHERE they locked (private until both locked) — YOU vs THEM dial
     await showLockReveal(playerWonRound);
 
     const winnerName = playerWonRound ? 'YOU' : F.kol.name;
@@ -952,11 +961,10 @@
       playerWonRound ? '#39ff88' : '#ff3b5c',
       900
     );
-    // (degrees / margin already shown in the inline reveal — no duplicate float text over the HUD)
 
-    // Play slap animation for the round attacker (landed or stuffed)
+    // Play slap animation: landed hit, or miss/whiff so the defender dodges/blocks (not a fake hit-react)
     const slapWho = C.attacker === 'player' ? 'player' : 'kol';
-    const slapGrade = attackerWins ? (grade.id === 'miss' ? 'weak' : grade.id) : 'weak';
+    const slapGrade = attackerWins ? (grade.id === 'miss' ? 'weak' : grade.id) : 'miss';
     const doImpact = () => {
       if (attackerWins) {
         A.slap(grade.mult * (fire ? 1.4 : 1));
@@ -984,8 +992,25 @@
 
     await wait(0.35);
 
-    if (C.pWins >= C.winsNeeded) return knockout('kol');
-    if (C.kWins >= C.winsNeeded) return knockout('player');
+    const matchOver = C.pWins >= C.winsNeeded || C.kWins >= C.winsNeeded;
+    if (matchOver) {
+      // Deciding round won by bracing: deliver a quick finishing slap from the winner before fly-off
+      if (!attackerWins) {
+        const finisher = playerWonRound ? 'player' : 'kol';
+        const doFin = () => {
+          A.slap(1.1);
+          hapticSlap('good', false, 12);
+          flash('#ffe23d');
+          const target = finisher === 'player' ? 'k' : 'p';
+          const pk = $(`#${target}-portrait`);
+          pk.classList.remove('hit'); void pk.offsetWidth; pk.classList.add('hit');
+        };
+        if (Scene) await Scene.slap(finisher, { grade: 'good', fire: false, dist: 12, windup: 0.16, landed: true, onImpact: doFin });
+        else { await wait(0.25); doFin(); }
+        await wait(0.12);
+      }
+      return knockout(C.pWins >= C.winsNeeded ? 'kol' : 'player');
+    }
 
     await wait(0.25);
     startChallengeRound();
@@ -1003,6 +1028,8 @@
     hideLockReveal();
     $('#prompt').classList.add('hidden');
     $('#brace').classList.add('hidden');
+    if (loser === 'kol') F.kHp = 0; else F.pHp = 0;
+    renderHp();
     A.ko(); haptic([60, 40, 120]);
     if (loser === 'kol') $('#k-portrait').innerHTML = SAK.avatarSVG(F.kol.look, { ko: true, blush: true });
     else $('#p-portrait').innerHTML = SAK.avatarSVG(playerLook(), { ko: true, blush: true });
@@ -1027,18 +1054,28 @@
     if (win) {
       const base = k.winPts * modeMult;
       const streakPts = base * PR.streakPct * Math.min(streakBefore, PR.streakCap);
-      rows.push([F.mode === 'duel' ? 'Bo3 duel win (½ pts)' : 'Bo5 classic win', base], [`Based slaps (${F.perfects}★)`, F.perfects * PR.perPerfect]);
+      rows.push([F.mode === 'duel' ? 'Bo3 duel win (½ pts)' : 'Bo5 classic win', base]);
+      if (F.perfects > 0) rows.push([`Based slaps (${F.perfects}★)`, F.perfects * PR.perPerfect]);
       if (streakPts) rows.push([`Win streak (${streakBefore}🔥)`, streakPts]);
       pts = base + F.perfects * PR.perPerfect + streakPts;
     } else if (draw) {
       rows.push(['Crab market consolation', PR.lossBase * 2]);
       pts = PR.lossBase * 2;
     } else {
-      rows.push(['Participation', PR.lossBase], [`Rounds won (${F.hits})`, F.hits * PR.perHitLanded]);
+      rows.push(['Participation', PR.lossBase]);
+      if (F.hits > 0) rows.push([`Rounds won (${F.hits})`, F.hits * PR.perHitLanded]);
       pts = PR.lossBase + F.hits * PR.perHitLanded;
     }
     if (boost) rows.push([`Vault boost (${V.tier.name} +${Math.round(boost * 100)}%)`, pts * boost]);
     pts = Math.round(pts * boostMul);
+    // Round row values once so displayed lines sum exactly to MATCH PTS (remainder on last row)
+    {
+      let acc = 0;
+      for (let i = 0; i < rows.length; i++) {
+        if (i === rows.length - 1) rows[i][1] = pts - acc;
+        else { const r = Math.round(rows[i][1]); rows[i][1] = r; acc += r; }
+      }
+    }
     P.add(pts, true);
 
     // ---- optional PTS bet ----
@@ -1123,6 +1160,27 @@
     if (slotsNow > lastSlots) setTimeout(() => toast(`✍ New KOL submission slot unlocked! (${slotsNow})`, 2600), 1200);
     lastSlots = slotsNow;
   }
+
+
+  /* ================================================================ SHOP */
+  function renderShopStats() {
+    const el = $('#shop-stats');
+    if (!el) return;
+    el.innerHTML = `<div><small>MAX HP</small><b>${playerMaxHp()}</b></div>
+      <div><small>POWER</small><b>${playerPower()}</b></div>
+      <div><small>❤ Lv</small><b>${S.upgrades.health}</b></div>
+      <div><small>✊ Lv</small><b>${S.upgrades.power}</b></div>`;
+    const sub = $('#shop-sub');
+    if (sub) sub.textContent = `❤ Lv${S.upgrades.health} · ✊ Lv${S.upgrades.power}`;
+  }
+  function openShop() {
+    A.unlock(); A.click();
+    renderUpgrades();
+    renderShopStats();
+    $('#modal-shop').classList.remove('hidden');
+  }
+  $('#btn-shop').addEventListener('click', openShop);
+  $('#btn-shop-pick').addEventListener('click', openShop);
 
   /* ================================================================= VAULT */
   let vaultAmt = 500, vaultTimer = 0;
@@ -1216,7 +1274,14 @@
       if (b && !P.canAfford(b)) return toast('Not enough PTS. Down bad.');
       pvpWager = b; A.click(); openPvp();
     });
-    $('#pvp-wager-hint').textContent = pvpWager ? `winner takes ~${fmt(pvpWager * 2)} PTS` : 'friendly slap, no wager';
+    // Payout = wager × opponent multiplier (x1.6–x2.65) × (1 + vault boost) — same as fight stake tag
+    if (pvpWager) {
+      const lo = boosted(pvpWager * 1.6), hi = boosted(pvpWager * 2.65);
+      const boostLbl = V.boost ? ` incl. +${Math.round(V.boost * 100)}% vault` : '';
+      $('#pvp-wager-hint').textContent = `winner takes ${fmt(lo)}–${fmt(hi)} PTS (×opp${boostLbl})`;
+    } else {
+      $('#pvp-wager-hint').textContent = 'friendly slap, no wager';
+    }
     const list = await SAK.Matchmaking.listOnline();
     $('#pvp-count').textContent = `${list.filter(p => p.status === 'online').length} online (simulated)`;
     $('#pvp-list').innerHTML = list.map((p, i) => `
@@ -1361,9 +1426,10 @@
     if (!S.profile) setTimeout(() => { if (!S.profile && screen === 'menu') openFighter(false); }, 500);
     // debug hook for console testing / automated smoke tests
     window.SAK_DEBUG = {
-      state: S, get fight() { return F; }, roster, openVault, openSubmit, openPvp, openLeaderboard,
+      state: S, get fight() { return F; }, roster, openVault, openShop, openSubmit, openPvp, openLeaderboard,
       startFight: (id, bet, mode) => startFight(roster().find(k => k.id === id) || roster()[0], bet, { mode }),
       lockAt: angle => lockLocal(true, angle),   // smoke tests: lock local meter at an exact angle
+      lockOpp: angle => lockOpponentPrivate(angle), // smoke tests: force private opponent lock
       get scene() { return Scene; }
     };
   }

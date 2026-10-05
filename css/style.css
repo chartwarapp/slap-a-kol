@@ -605,7 +605,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 .rv-note { text-align: center; font: 700 9px system-ui, sans-serif; opacity: .7; line-height: 1.3; }
 .rv-timer { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #ffffff1a; }
 .rv-timer span { display: block; height: 100%; width: 100%; background: #ffd23f; transform-origin: left; }
-.rv-timer span.run { animation: rvTimer var(--rv-ms, 2200ms) linear forwards; }
+.rv-timer span.run { animation: rvTimer var(--rv-ms, 1200ms) linear forwards; }
 @keyframes rvTimer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .reveal-panel.you-win .rv-timer span { background: #39ff88; }
 .reveal-panel.them-win .rv-timer span { background: #ff7a9a; }
@@ -663,3 +663,11 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 .creator-card .row .btn { font-size: 16px; padding: 10px 6px; }
 .lb-row .lb-av { display: inline-block; width: 22px; height: 22px; vertical-align: -5px; margin-right: 5px; }
 .lb-row .lb-av .avatar-svg { width: 22px; height: 22px; border-radius: 6px; display: block; }
+
+/* ---- Shop / upgrades modal ---------------------------------------------- */
+.shop-card { background: linear-gradient(#ffd23f, #fff 28%); }
+.shop-card h3 { color: var(--ink); text-shadow: none; }
+.shop-stats { display: flex; justify-content: space-around; gap: 8px; background: #1a0b3a10; border-radius: 12px; padding: 8px; font: 700 13px system-ui, sans-serif; color: var(--ink); }
+.shop-stats b { display: block; font-family: var(--font); font-size: 22px; font-weight: 400; }
+.shop-upgrades { max-height: none; opacity: 1; margin: 0; }
+.pick-header .icon-btn#btn-shop-pick { margin-left: auto; }
