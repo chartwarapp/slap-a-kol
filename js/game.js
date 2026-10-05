@@ -600,6 +600,8 @@
     $('#brace').classList.add('hidden');
 
     const isAtk = C.localSide === 'atk';
+    // Role camera: bracing → show YOUR face (incoming slap); attacking → default fight view
+    if (Scene && Scene.setRoleCam) Scene.setRoleCam(isAtk ? 'attack' : 'brace');
     const roleEl = $('#role-label');
     roleEl.textContent = isAtk ? '🥊 ATTACK' : '🛡 BRACE';
     roleEl.className = 'meter-role ' + (isAtk ? 'atk-role' : 'def-role');
