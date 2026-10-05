@@ -665,7 +665,7 @@ SAK.Scene3D = (function () {
       camBase.look.set(0, 1.75, 0);
       const dir = new T.Vector3(1, 0.42, 0.42).normalize();
       const pull = koCam ? 1.48 : 1; // zoom out further during KO fly-out
-      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.0 * k * pull);
+      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.9 * k * pull);
       camBase.look.y -= 0.35 * (k - 1); // leave room for the meter at the bottom
       if (koCam) { camBase.pos.y += 0.85; camBase.look.y = Math.max(0.55, camBase.look.y - 0.35); }
     }
@@ -724,7 +724,7 @@ SAK.Scene3D = (function () {
 
     scene = new T.Scene();
     scene.fog = new T.Fog('#2a0b5e', 16, 34);
-    camera = new T.PerspectiveCamera(42, 1, 0.1, 100);
+    camera = new T.PerspectiveCamera(45, 1, 0.1, 100);
 
     scene.add(new T.HemisphereLight('#ffffff', '#9b6bff', 2.0));
     const sun = new T.DirectionalLight('#fff4e0', 2.6);
