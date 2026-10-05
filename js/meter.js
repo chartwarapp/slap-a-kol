@@ -149,3 +149,51 @@ SAK.Meter = (function () {
     get angle() { return inst ? inst.angle : 0; }
   };
 })();
+
+/**
+ * Compact dual-needle dial for the inline post-lock reveal: same arc/zones as
+ * the private meter, with YOU + THEM needles on one face.
+ * set(youAngle, themAngle, youWins) freezes both needles.
+ */
+SAK.createRevealDial = function (el) {
+  const CX = 100, CY = 100, R = 78, W = 22;
+  const rad = d => (d - 90) * Math.PI / 180;
+  const pt = (d, r) => [CX + r * Math.cos(rad(d)), CY + r * Math.sin(rad(d))];
+  const arcPath = (a0, a1, r) => {
+    const [x0, y0] = pt(a0, r), [x1, y1] = pt(a1, r);
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  const zones = SAK.METER.zones;
+  let segs = '';
+  for (let i = zones.length - 1; i >= 0; i--) {
+    const z = zones[i];
+    segs += `<path d="${arcPath(-z.maxAngle, z.maxAngle, R)}" stroke="${z.color}" stroke-width="${W}" fill="none"/>`;
+  }
+  const needle = (cls, color, len) =>
+    `<g class="rd-needle ${cls}" transform="rotate(0 ${CX} ${CY})">
+       <polygon points="${CX - 5},${CY} ${CX + 5},${CY} ${CX + 1.5},${CY - len} ${CX - 1.5},${CY - len}" fill="${color}" stroke="#1a0b3a" stroke-width="2.5" stroke-linejoin="round"/>
+       <circle cx="${CX}" cy="${CY - len}" r="5.5" fill="${color}" stroke="#1a0b3a" stroke-width="2"/>
+     </g>`;
+  el.innerHTML = `
+    <svg viewBox="0 2 200 108" class="meter-svg reveal-dial-svg" preserveAspectRatio="xMidYMid meet">
+      <path d="${arcPath(-90, 90, R)}" stroke="#2a1458" stroke-width="${W + 10}" fill="none" stroke-linecap="round"/>
+      ${segs}
+      <path d="${arcPath(-90, 90, R + W / 2 + 1)}" stroke="#fff" stroke-width="2.5" fill="none" opacity=".85"/>
+      <text x="100" y="${CY - R - W / 2 - 4}" text-anchor="middle" class="meter-perfect">★</text>
+      ${needle('them', '#ff7a9a', R + 6)}
+      ${needle('you', '#7ec0ff', R + 6)}
+      <circle cx="${CX}" cy="${CY}" r="11" fill="#1a0b3a"/><circle cx="${CX}" cy="${CY}" r="6" fill="#ffd23f"/>
+    </svg>`;
+  const nYou = el.querySelector('.rd-needle.you');
+  const nThem = el.querySelector('.rd-needle.them');
+  const clamp = a => Math.max(-90, Math.min(90, a));
+  return {
+    set(youAngle, themAngle, youWins) {
+      nYou.setAttribute('transform', `rotate(${clamp(youAngle).toFixed(2)} ${CX} ${CY})`);
+      nThem.setAttribute('transform', `rotate(${clamp(themAngle).toFixed(2)} ${CX} ${CY})`);
+      // Winner's needle drawn on top
+      const svg = nYou.parentNode;
+      svg.insertBefore(youWins ? nThem : nYou, youWins ? nYou : nThem);
+    }
+  };
+};

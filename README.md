@@ -30,7 +30,7 @@ Haptics use the Vibration API (Android Chrome; iPhone Safari does not support we
    - Role label: **🥊 ATTACK** or **🛡 BRACE** (roles alternate each round).
    - Both roles use the **jerky / unpredictable** needle — same green ★ fairness.
    - Opponent locks **privately** (you never see their needle while you play).
-4. **After both lock**: a **LOCK REVEAL** popup shows YOU vs THEM needle marks vs the green ★ centre (how close they were).
+4. **After both lock**: the meter panel swaps **inline** (same spot, no popup) into a compact reveal — YOU vs THEM needles on one dial, degrees off the green ★ centre, and the round result. Tap it (or Space/Enter) to continue, or it auto-continues after ~2.2 s.
 5. **Closer to the centre of the green zone wins the round**. Equal distance → **attacker wins** (tie-break).
    - **Role camera**: while YOU **brace** (about to get slapped) the camera orbits onto **your face**; while you **attack** it returns to the default fight view. Smooth swing on every role change.
    - **Slap face-cam**: the camera orbits onto the slapped fighter's FACE for the hit reaction (shallower swing on a stuffed slap), holds a beat, then eases back to the fight view for the next round.
@@ -100,7 +100,7 @@ js/game.js          game controller / private-meter challenge state machine / UI
 - Each device shows only the local player's meter (ATTACK or BRACE).
 - Shared green-centre fairness: same zone geometry for both roles.
 - Both roles: random jerky speed / direction changes (`SAK.CHALLENGE` in `config.js`).
-- Opponent lock is private until both lock — then LOCK REVEAL compares YOU vs THEM needle marks vs green ★.
+- Opponent lock is private until both lock — then the meter panel turns into an inline reveal comparing YOU vs THEM needles vs green ★.
 - Score each exchange by `|needleAngle|` distance from centre — **closer wins**.
 - **Tie-break: attacker wins** when distances are equal.
 - Quick Duel = Bo3 · Classic = Bo5.

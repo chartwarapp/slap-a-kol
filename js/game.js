@@ -27,9 +27,9 @@
   const W = SAK.Wallet, A = SAK.Audio, P = SAK.Points, V = SAK.Vault;
   let Scene = null;                  // SAK.Scene3D once WebGL is up
   let MeterLocal = null;                 // private per-device meter (local player only)
-  let MeterRevealYou = null, MeterRevealThem = null; // post-lock compare dials
+  let RevealDial = null;                 // inline post-lock dual-needle dial
   let aiLockTimer = 0, roundTimer = 0;
-  let revealDismiss = null;              // resolve() for tap-to-continue on lock reveal
+  let revealDismiss = null;              // finish() for tap-to-continue on inline reveal
 
   /* ----------------------------------------------------------- derived stats */
   const playerMaxHp = () => SAK.PLAYER.baseHp + S.upgrades.health * SAK.PLAYER.hpPerLevel;
@@ -588,7 +588,7 @@
     clearTimeout(aiLockTimer);
     clearTimeout(roundTimer);
     if (MeterLocal) MeterLocal.stop();
-    // leave reveal visible during resolve; hideLockReveal called on next round / KO
+    // inline reveal is closed by its own finish(); hideLockReveal on next round / KO
   }
 
   function makeLockResult(angle) {
@@ -752,95 +752,87 @@
   }
 
 
+  const REVEAL_MS = 2200;
+
   function hideLockReveal() {
-    const el = $('#lock-reveal');
-    if (el) el.classList.add('hidden');
     if (revealDismiss) {
       const r = revealDismiss;
       revealDismiss = null;
       try { r(); } catch (_) {}
     }
+    const el = $('#reveal-panel');
+    if (el) el.classList.add('hidden');
+    $('#private-meter').classList.remove('revealing');
   }
 
-  /** Pop-up after BOTH sides locked: show YOU vs THEM needle marks vs green ★. */
+  /**
+   * Inline reveal after BOTH sides locked: the meter panel swaps (same footprint)
+   * into a compact YOU vs THEM dial + degrees off centre + round result.
+   * Resolves on tap / Space / Enter, or automatically after REVEAL_MS.
+   */
   function showLockReveal(playerWonRound) {
     return new Promise(resolve => {
       const C = F && F.challenge;
-      if (!C || !C.locks.atk || !C.locks.def) { resolve(); return; }
-      const el = $('#lock-reveal');
-      if (!el) { resolve(); return; }
+      const el = $('#reveal-panel');
+      if (!C || !C.locks.atk || !C.locks.def || !el) { resolve(); return; }
+      if (revealDismiss) { try { revealDismiss(); } catch (_) {} }
 
       const localIsAtk = C.localSide === 'atk';
       const youLock = C.locks[C.localSide];
       const themLock = C.locks[localIsAtk ? 'def' : 'atk'];
-      const youRoleAtk = localIsAtk;
-      const themRoleAtk = !localIsAtk;
-
-      $('#lr-sub').textContent = playerWonRound
-        ? `Round ${C.round} · YOU take it`
-        : `Round ${C.round} · ${F.kol.name} takes it`;
-
-      $('#lr-you-role').textContent = youRoleAtk ? '🥊 ATTACK' : '🛡 BRACE';
-      $('#lr-you-role').className = 'lr-role ' + (youRoleAtk ? 'atk' : 'def');
-      $('#lr-them-who').textContent = (F.kol.name || 'THEM').slice(0, 12);
-      $('#lr-them-role').textContent = themRoleAtk ? '🥊 ATTACK' : '🛡 BRACE';
-      $('#lr-them-role').className = 'lr-role ' + (themRoleAtk ? 'atk' : 'def');
-
-      const fmtDist = lock => {
-        const d = lock.dist;
-        const side = lock.angle < 0 ? 'L' : (lock.angle > 0 ? 'R' : '★');
-        return `${d.toFixed(0)}<span class="lr-deg">°${side === '★' ? '' : ' ' + side}</span>`;
-      };
-      $('#lr-you-dist').innerHTML = fmtDist(youLock);
-      $('#lr-them-dist').innerHTML = fmtDist(themLock);
-      $('#lr-you-zone').textContent = (youLock.zone && (youLock.zone.label || youLock.zone.id)) || '—';
-      $('#lr-you-zone').style.color = (youLock.zone && youLock.zone.color) || '#fff';
-      $('#lr-them-zone').textContent = (themLock.zone && (themLock.zone.label || themLock.zone.id)) || '—';
-      $('#lr-them-zone').style.color = (themLock.zone && themLock.zone.color) || '#fff';
-
-      const youCloser = youLock.dist < themLock.dist
-        || (youLock.dist === themLock.dist && ((SAK.CHALLENGE.tieBreak !== 'defender') ? youRoleAtk : !youRoleAtk));
-      $('#lr-you').classList.toggle('winner', youCloser);
-      $('#lr-you').classList.toggle('loser', !youCloser);
-      $('#lr-them').classList.toggle('winner', !youCloser);
-      $('#lr-them').classList.toggle('loser', youCloser);
-      $('#lr-you-badge').classList.toggle('hidden', !youCloser);
-      $('#lr-them-badge').classList.toggle('hidden', youCloser);
-
-      const delta = Math.abs(youLock.dist - themLock.dist);
       const tie = youLock.dist === themLock.dist;
-      $('#lr-margin').textContent = tie
-        ? `TIE ${youLock.dist.toFixed(0)}° · ${(SAK.CHALLENGE.tieBreak !== 'defender') ? 'attacker edge' : 'defender edge'}`
-        : `Δ ${delta.toFixed(1)}° from ★ green · ${youCloser ? 'you closer' : 'them closer'}`;
+      const attackerEdge = SAK.CHALLENGE.tieBreak !== 'defender';
+      const youWin = !!playerWonRound;
 
-      // Freeze needles on reveal dials (built once, reused)
-      if (!MeterRevealYou) MeterRevealYou = SAK.createMeter($('#lr-meter-you'), { jerky: false, label: '' });
-      if (!MeterRevealThem) MeterRevealThem = SAK.createMeter($('#lr-meter-them'), { jerky: false, label: '' });
-      MeterRevealYou.stop();
-      MeterRevealThem.stop();
-      MeterRevealYou.forceLock(youLock.angle);
-      MeterRevealThem.forceLock(themLock.angle);
+      const fmtDeg = lock => {
+        const side = lock.angle < -0.5 ? ' L' : (lock.angle > 0.5 ? ' R' : '');
+        return `${lock.dist.toFixed(0)}°${side}`;
+      };
+      $('#rv-result').textContent = youWin ? 'YOU WIN THE ROUND' : 'THEY WIN THE ROUND';
+      $('#rv-you-deg').textContent = fmtDeg(youLock);
+      $('#rv-them-deg').textContent = fmtDeg(themLock);
+      $('#rv-them-name').textContent = ((F.kol && F.kol.name) || 'THEM').toUpperCase();
+      $('#rv-you').classList.toggle('closer', youWin);
+      $('#rv-them').classList.toggle('closer', !youWin);
+      $('#rv-note').textContent = tie
+        ? `tie ${youLock.dist.toFixed(0)}° · ${attackerEdge ? 'attacker' : 'defender'} wins ties · tap to continue`
+        : `${Math.abs(youLock.dist - themLock.dist).toFixed(1)}° closer to ★ · tap to continue`;
+      el.classList.toggle('you-win', youWin);
+      el.classList.toggle('them-win', !youWin);
 
+      if (!RevealDial) RevealDial = SAK.createRevealDial($('#rv-dial'));
+      RevealDial.set(youLock.angle, themLock.angle, youWin);
+
+      // Restart the auto-continue bar + entry animation
+      const bar = $('#rv-timer-bar');
+      bar.style.setProperty('--rv-ms', REVEAL_MS + 'ms');
+      bar.classList.remove('run');
+      el.classList.add('hidden');
+      void el.offsetWidth;
+      $('#private-meter').classList.add('revealing');
       el.classList.remove('hidden');
+      bar.classList.add('run');
       A.click();
       haptic(12);
 
-      // Tap / auto-continue
-      if (revealDismiss) { try { revealDismiss(); } catch (_) {} }
-      let settled = false;
+      const shownAt = performance.now();
+      let settled = false, autoT = 0;
       const finish = () => {
         if (settled) return;
         settled = true;
-        revealDismiss = null;
+        clearTimeout(autoT);
+        if (revealDismiss === finish) revealDismiss = null;
         el.removeEventListener('click', onTap);
         el.classList.add('hidden');
+        bar.classList.remove('run');
+        $('#private-meter').classList.remove('revealing');
         resolve();
       };
+      // Ignore the tail of the lock tap that may land on the freshly swapped panel
+      const onTap = e => { e.preventDefault(); if (performance.now() - shownAt > 250) finish(); };
       revealDismiss = finish;
-      const onTap = e => { e.preventDefault(); finish(); };
       el.addEventListener('click', onTap);
-      // Auto-advance so the fight keeps momentum
-      setTimeout(finish, 2200);
+      autoT = setTimeout(finish, REVEAL_MS);
     });
   }
 
@@ -1221,8 +1213,8 @@
   window.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
     if (screen !== 'fight' || !F) return;
-    // Space/Enter dismisses lock reveal when shown
-    if (revealDismiss && (e.code === 'Space' || e.code === 'Enter')) {
+    // Space/Enter continues past the inline lock reveal
+    if (revealDismiss && !e.repeat && (e.code === 'Space' || e.code === 'Enter')) {
       e.preventDefault();
       revealDismiss();
       return;

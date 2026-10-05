@@ -118,6 +118,17 @@
           <div class="meter-hint" id="hint-local">TAP / SPACE TO LOCK</div>
           <div class="meter-wait hidden" id="meter-wait">LOCKED · OPPONENT LOCKING…</div>
         </div>
+        <!-- Inline post-lock reveal: swaps in over the meter panel (same footprint) once BOTH locked -->
+        <div class="meter-panel reveal-panel hidden" id="reveal-panel" role="button" tabindex="-1" aria-live="polite" aria-label="Round reveal — tap to continue">
+          <div class="rv-result" id="rv-result">YOU WIN THE ROUND</div>
+          <div class="rv-dial" id="rv-dial"></div>
+          <div class="rv-stats">
+            <span class="rv-stat you" id="rv-you"><i></i>YOU <b id="rv-you-deg">0°</b></span>
+            <span class="rv-stat them" id="rv-them"><i></i><em id="rv-them-name">THEM</em> <b id="rv-them-deg">0°</b></span>
+          </div>
+          <div class="rv-note" id="rv-note">closer to ★ wins · tap to continue</div>
+          <div class="rv-timer"><span id="rv-timer-bar"></span></div>
+        </div>
       </div>
       <!-- Legacy mounts kept so old refs don't NPE -->
       <div id="meter" class="meter hidden" aria-hidden="true"></div>
@@ -260,35 +271,6 @@
       <button class="btn btn-grey" id="btn-disconnect">Disconnect wallet</button>
       <button class="btn btn-grey" id="btn-reset">Reset progress</button>
       <button class="btn btn-yellow" id="btn-close-settings">CLOSE</button>
-    </div>
-  </div>
-
-  <!-- Post-lock compare: opponent needle revealed only after BOTH locked -->
-  <div id="lock-reveal" class="lock-reveal hidden" aria-live="polite">
-    <div class="lock-reveal-card">
-      <div class="lr-title">🔓 LOCK REVEAL</div>
-      <div class="lr-sub" id="lr-sub">Closer to ★ green wins</div>
-      <div class="lr-compare">
-        <div class="lr-side you" id="lr-you">
-          <div class="lr-who">YOU</div>
-          <div class="lr-role" id="lr-you-role">🥊 ATTACK</div>
-          <div class="lr-meter" id="lr-meter-you"></div>
-          <div class="lr-dist" id="lr-you-dist">—°</div>
-          <div class="lr-zone" id="lr-you-zone">—</div>
-          <div class="lr-badge hidden" id="lr-you-badge">★ CLOSER</div>
-        </div>
-        <div class="lr-vs">VS</div>
-        <div class="lr-side them" id="lr-them">
-          <div class="lr-who" id="lr-them-who">THEM</div>
-          <div class="lr-role" id="lr-them-role">🛡 BRACE</div>
-          <div class="lr-meter" id="lr-meter-them"></div>
-          <div class="lr-dist" id="lr-them-dist">—°</div>
-          <div class="lr-zone" id="lr-them-zone">—</div>
-          <div class="lr-badge hidden" id="lr-them-badge">★ CLOSER</div>
-        </div>
-      </div>
-      <div class="lr-margin" id="lr-margin"></div>
-      <div class="lr-hint">Tap to continue</div>
     </div>
   </div>
 
