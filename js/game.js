@@ -906,7 +906,7 @@
       }
     };
 
-    if (Scene) await Scene.slap(slapWho, { grade: slapGrade, fire: fire && attackerWins && playerIsAtk, dist: attackerWins ? atk.dist : def.dist, windup: 0.28, onImpact: doImpact });
+    if (Scene) await Scene.slap(slapWho, { grade: slapGrade, fire: fire && attackerWins && playerIsAtk, dist: attackerWins ? atk.dist : def.dist, windup: 0.28, landed: attackerWins, onImpact: doImpact });
     else { await wait(0.35); doImpact(); }
 
     await wait(0.35);

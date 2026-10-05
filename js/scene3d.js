@@ -54,8 +54,11 @@ SAK.Scene3D = (function () {
   let candles = [], coins = [];
   let shake = 0, time = 0, mode = 'menu';
   let koCam = null; // { track:Fighter, offset:Vector3, until:number } — follow loser fly-out + land
+  let hitCam = null; // { target:Fighter, w:0..1, peak } — cinematic orbit onto the slapped fighter's FACE
+  let camK = 1;      // aspect pull-back factor from frameCamera (narrow screens > 1)
   const camBase = { pos: new T.Vector3(), look: new T.Vector3() };
   const camCur = { pos: new T.Vector3(), look: new T.Vector3() };
+  const camFight = { pos: new T.Vector3(), look: new T.Vector3() }; // resting fight framing
 
   const matCache = {};
   function mat(color, opts) {
@@ -809,6 +812,7 @@ SAK.Scene3D = (function () {
     camera.aspect = aspect;
     // narrower screens => pull back so both fighters fit
     const k = Math.min(1.75, Math.max(1, 0.82 / aspect));
+    camK = k;
     const preview = mode === 'pick';
     if (player) player.root.visible = !preview;   // picker focuses on the KOL only
     if (mode === 'menu') {
@@ -827,10 +831,49 @@ SAK.Scene3D = (function () {
       const dir = new T.Vector3(1, 0.42, 0.42).normalize();
       camBase.pos.copy(camBase.look).addScaledVector(dir, 5.9 * k);
       camBase.look.y -= 0.35 * (k - 1); // leave room for the meter at the bottom
+      camFight.pos.copy(camBase.pos); camFight.look.copy(camBase.look);
     }
     // during KO fly-out, loop() owns camBase (tracks the loser) — don't overwrite
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
+  }
+
+  /* ------------------------------------------------------- slap face-cam */
+  // Face close-up framing for fighter F: three-quarter front on the slap side
+  // (+x, where every slapping hand enters), slightly above eye level.
+  const _faceOff = new T.Vector3(), _sA = new T.Spherical(), _sB = new T.Spherical();
+  const _vA = new T.Vector3(), _vB = new T.Vector3(), _face = { pos: new T.Vector3(), look: new T.Vector3() };
+  function faceFraming(F, out) {
+    const head = F.homeHead || F.headWorld();
+    // Fit ~2.1 units of width (head + slapping hand + FX) for this aspect:
+    // portrait phones (the usual case) need more distance than landscape.
+    const halfV = Math.tan(T.MathUtils.degToRad(45) / 2);
+    const dist = Math.min(5.8, Math.max(2.5, 1.0 / (halfV * Math.min(1, camera.aspect || 1))));
+    // ~57° off the face normal on the -x side: every slap travels +x → -x, so
+    // the struck head snaps TOWARD this camera (full scream/wince face), and the
+    // attacker's head/shoulder sits at frame edge instead of masking the face.
+    const ang = -1.0;
+    // HUD covers the top, meter the bottom — centre the head in what's left
+    out.look.set(head.x, head.y - 0.1, head.z);
+    _faceOff.set(Math.sin(ang), 0, Math.cos(ang) * F.facing).multiplyScalar(dist);
+    out.pos.set(head.x + _faceOff.x, head.y + 1.2, head.z + _faceOff.z);
+    return out;
+  }
+
+  /** Blend fight framing → face framing by w, orbiting (spherical) not cutting. */
+  function orbitBlend(a, b, w, out) {
+    out.look.lerpVectors(a.look, b.look, w);
+    _sA.setFromVector3(_vA.subVectors(a.pos, a.look));
+    _sB.setFromVector3(_vB.subVectors(b.pos, b.look));
+    let dTheta = _sB.theta - _sA.theta;
+    while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+    while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+    _sA.set(
+      _sA.radius + (_sB.radius - _sA.radius) * w,
+      _sA.phi + (_sB.phi - _sA.phi) * w,
+      _sA.theta + dTheta * w
+    );
+    out.pos.setFromSpherical(_sA).add(out.look);
   }
 
   /* ================================================================= loop */
@@ -867,6 +910,17 @@ SAK.Scene3D = (function () {
         );
       }
       if (time > koCam.until) koCam = null;
+    } else if (hitCam && hitCam.target && mode !== 'menu' && mode !== 'pick') {
+      // Slap face-cam: orbit from the fight framing onto the defender's face
+      const F = hitCam.target;
+      faceFraming(F, _face);
+      // follow the head's recoil a little so the reaction stays centred
+      const live = F.headWorld(_vA);
+      const home = F.homeHead || live;
+      _face.look.x += (live.x - home.x) * 0.9;
+      _face.look.y += (live.y - home.y) * 0.9;
+      _face.look.z += (live.z - home.z) * 0.9;
+      orbitBlend(camFight, _face, hitCam.w, camBase);
     }
     // smooth camera + shake (snappier during KO pullback)
     const camLerp = koCam ? (1 - Math.pow(0.00005, dt)) : (1 - Math.pow(0.001, dt));
@@ -874,8 +928,10 @@ SAK.Scene3D = (function () {
     camCur.look.lerp(camBase.look, camLerp);
     camera.position.copy(camCur.pos);
     if (shake > 0) {
-      camera.position.x += (Math.random() - 0.5) * shake;
-      camera.position.y += (Math.random() - 0.5) * shake;
+      // close-ups magnify shake — tame it while the face-cam is in tight
+      const sh = shake * ((!koCam && hitCam) ? (1 - 0.45 * hitCam.w) : 1);
+      camera.position.x += (Math.random() - 0.5) * sh;
+      camera.position.y += (Math.random() - 0.5) * sh;
       shake = Math.max(0, shake - dt * (koCam ? 1.1 : 1.6));
     }
     camera.lookAt(camCur.look);
@@ -932,6 +988,7 @@ SAK.Scene3D = (function () {
   function resetFight() {
     SAK.Tween.clear();
     koCam = null;
+    endHitCam(true);
     if (player) { player.resetPose(); player.setFire(false); }
     if (kol) { kol.resetPose(); kol.setFire(false); }
     if (mode === 'fight' || mode === 'arena') frameCamera();
@@ -1005,6 +1062,26 @@ SAK.Scene3D = (function () {
     return R;
   }
 
+  /** Begin the face-cam on defender D. Returns the cam token. */
+  function startHitCam(D, peak) {
+    D.homeHead = D.headWorld(new T.Vector3());
+    hitCam = { target: D, w: hitCam && hitCam.target === D ? hitCam.w : 0, peak: peak };
+    return hitCam;
+  }
+  /** Ease the face-cam back to the fight framing (or snap off). */
+  async function endHitCam(snap, cam) {
+    const hc = cam || hitCam;
+    if (!hc) return;
+    if (!snap) {
+      await SAK.Tween.to(hc, { w: 0 }, 0.8, SAK.Ease.inOutQuad);
+      if (hitCam !== hc) return;   // superseded by a newer slap / KO
+    }
+    if (hitCam === hc) {
+      hitCam = null;
+      if (!koCam && mode !== 'menu' && mode !== 'pick') { camBase.pos.copy(camFight.pos); camBase.look.copy(camFight.look); }
+    }
+  }
+
   /**
    * Full slap animation.
    * @param who      'player' | 'kol' (the attacker)
@@ -1016,13 +1093,24 @@ SAK.Scene3D = (function () {
     const tier = reactTier(opts.grade, opts.fire, opts.dist);
     if (opts.fire) A.setFire(true);
 
+    // Face-cam: orbit toward the fighter about to be slapped so the hit
+    // reaction reads on their FACE. Anticipation drift during wind-up, fast
+    // cinematic swing in on the strike, hold through the reaction, ease back.
+    // Stuffed (defender won) / light hits get a shallower swing.
+    const landsHit = opts.grade !== 'miss' && !!tier;
+    const peak = !landsHit ? 0.45 : (opts.landed === false ? 0.7 : 1);
+    const cam = startHitCam(D, peak);
+    const windup = opts.windup || 0.42;
+    SAK.Tween.to(cam, { w: peak * 0.4 }, windup + 0.06, E.inOutQuad);
+
     // 1) wind-up: arm out and back, torso twists away
-    await SAK.Tween.to(p, { lift: 2.5, swing: 0.9, elbow: 1.3, twist: A.armSide * 0.55, lean: -0.1 }, opts.windup || 0.42, E.outCubic);
+    await SAK.Tween.to(p, { lift: 2.5, swing: 0.9, elbow: 1.3, twist: A.armSide * 0.55, lean: -0.1 }, windup, E.outCubic);
     if (opts.onWindupDone) opts.onWindupDone();
     await wait(0.06);
 
     // 2) strike: fast forward arc across the face
     SAK.Audio.whoosh();
+    if (hitCam === cam) SAK.Tween.to(cam, { w: peak }, 0.42, E.outCubic); // swing in to the face through contact
     if (opts.grade === 'miss') SAK.Tween.to(D.pose, { lean: -0.32 }, 0.12, E.outCubic); // dodge
     const strike = SAK.Tween.to(p, { lift: 2.25, swing: -2.05, elbow: 0.1, twist: -A.armSide * 0.5, lean: 0.2, lunge: 0.3 }, 0.16, E.inCubic);
     await wait(0.1);
@@ -1036,9 +1124,11 @@ SAK.Scene3D = (function () {
     await strike;
     await wait(0.12);
 
-    // 3) recover
+    // 3) recover — hold on the reaction face a beat, then ease back for next round
     if (opts.grade === 'miss') SAK.Tween.to(D.pose, { lean: 0 }, 0.3);
     A.setFire(false);
+    const holdS = tier === 'perfect' || tier === 'heavy' ? 0.42 : 0.28;
+    wait(holdS).then(() => { if (hitCam === cam && !koCam) endHitCam(false, cam); });
     await SAK.Tween.to(p, { lift: 0.12, swing: 0, elbow: 0.15, twist: 0, lean: 0, lunge: 0 }, 0.38, E.inOutQuad);
   }
 
@@ -1046,6 +1136,7 @@ SAK.Scene3D = (function () {
    *  Camera hard-tracks through fly-out + slapstick landing pose. */
   async function knockout(who) {
     const F = who === 'player' ? player : kol;
+    endHitCam(true); // KO follow-cam takes over from the face-cam
     F.xEyes.visible = true; F.eyes.visible = false;
     F.mouth.scale.set(1, 3, 1);
 
@@ -1122,5 +1213,6 @@ SAK.Scene3D = (function () {
   }
 
   return { init, setPlayer, setOpponent, setMode, resetFight, slap, knockout, setFireArmed, setBrace, screenPos, taunt, coinRain, laserEyes, setHelmet, setRage,
-    get player() { return player; }, get kol() { return kol; } };
+    get player() { return player; }, get kol() { return kol; },
+    get camDebug() { return { hit: hitCam ? +hitCam.w.toFixed(3) : null, ko: !!koCam, t: +time.toFixed(2) }; } };
 })();

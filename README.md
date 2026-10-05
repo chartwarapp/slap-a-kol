@@ -30,7 +30,8 @@ Controls: **tap / click** (or **Space / Enter / A / L**) to lock **your** meter.
    - Opponent locks **privately** (you never see their needle while you play).
 4. **After both lock**: a **LOCK REVEAL** popup shows YOU vs THEM needle marks vs the green ★ centre (how close they were).
 5. **Closer to the centre of the green zone wins the round**. Equal distance → **attacker wins** (tie-break).
-6. Match ends when someone hits the wins-needed score. KO fly-off + PTS result screen.
+   - **Slap face-cam**: the camera orbits onto the slapped fighter's FACE for the hit reaction (shallower swing on a stuffed slap), holds a beat, then eases back to the fight view for the next round.
+6. Match ends when someone hits the wins-needed score. KO fly-off (camera tracks the loser through flight + landing) + PTS result screen.
 
 ### Modes
 - **⚡ Quick Duel**: **best of 3** (first to 2). Pays ½ PTS.
