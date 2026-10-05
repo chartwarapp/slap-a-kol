@@ -53,7 +53,7 @@ SAK.Scene3D = (function () {
   let particles = [], rings = [];
   let candles = [], coins = [];
   let shake = 0, time = 0, mode = 'menu';
-  let koCam = null; // { track:Fighter, offset:Vector3, until:number } — follow loser fly-out
+  let koCam = null; // { track:Fighter, offset:Vector3, until:number } — follow loser fly-out + land
   const camBase = { pos: new T.Vector3(), look: new T.Vector3() };
   const camCur = { pos: new T.Vector3(), look: new T.Vector3() };
 
@@ -70,6 +70,43 @@ SAK.Scene3D = (function () {
     return m;
   }
   const wait = s => new Promise(r => setTimeout(r, s * 1000));
+
+  /* Slapstick KO landing poses — cartoon meme energy, no gore.
+   * rx/ry/rz = root euler; y = root height; t* / h* = torso/head; arm* = [lift,swing,elbow]. */
+  const LAND_POSES = [
+    { id: 'faceplant', rx: Math.PI * 0.52, ry: 0.12, rz: 0.18, y: 0.42,
+      tx: 0.28, ty: 0.1, tz: 0.08, hx: 0.9, hy: 0.35, hz: 0.1,
+      armL: [1.55, -1.15, 0.25], armR: [1.5, 1.25, 0.2] },
+    { id: 'akimbo', rx: -Math.PI * 0.5, ry: 0.45, rz: 0.25, y: 0.4,
+      tx: -0.2, ty: 0.55, tz: 0.35, hx: -0.45, hy: -0.7, hz: 0.45,
+      armL: [1.85, 1.45, 1.7], armR: [1.75, -1.55, 1.85] },
+    { id: 'headstuck', rx: Math.PI * 0.95, ry: 0.25, rz: 0.2, y: 1.55,
+      tx: 0.15, ty: 0.1, tz: 0.05, hx: 0.35, hy: 0.15, hz: 0.1,
+      armL: [0.45, 0.9, 1.85], armR: [0.55, -0.95, 1.7] },
+    { id: 'pretzel', rx: Math.PI * 0.38, ry: 1.15, rz: Math.PI * 0.58, y: 0.36,
+      tx: 0.65, ty: 0.95, tz: -0.55, hx: 0.55, hy: 1.25, hz: 0.45,
+      armL: [2.05, -0.35, 2.15], armR: [0.35, 1.85, 0.45] },
+    { id: 'buttup', rx: Math.PI * 0.72, ry: 0.08, rz: 0.12, y: 0.52,
+      tx: 0.85, ty: 0.05, tz: 0.1, hx: 1.15, hy: 0.1, hz: 0.25,
+      armL: [1.25, -0.55, 0.35], armR: [1.3, 0.55, 0.3] },
+    { id: 'oneleg', rx: 0.28, ry: 0.2, rz: Math.PI * 0.55, y: 0.26,
+      tx: 0.25, ty: -0.35, tz: 0.65, hx: 0.45, hy: 0.55, hz: 0.85,
+      armL: [0.25, 0.25, 0.15], armR: [1.95, -1.25, 1.55] },
+    { id: 'superman', rx: Math.PI * 0.5, ry: 0.05, rz: 0.05, y: 0.38,
+      tx: -0.18, ty: 0, tz: 0, hx: -0.35, hy: 0.05, hz: 0,
+      armL: [0.25, -1.65, 0.12], armR: [0.25, 1.65, 0.12] },
+    { id: 'starfished', rx: -Math.PI * 0.5, ry: 0.1, rz: 0.08, y: 0.4,
+      tx: 0.05, ty: 0.1, tz: 0.05, hx: -0.25, hy: 0.15, hz: 0.1,
+      armL: [1.95, 0.25, 0.2], armR: [1.95, -0.25, 0.2] },
+    { id: 'sideflop', rx: 0.18, ry: 0.55, rz: Math.PI * 0.48, y: 0.3,
+      tx: 0.4, ty: 0.25, tz: 0.2, hx: 0.65, hy: 0.45, hz: 0.55,
+      armL: [1.65, 0.85, 1.25], armR: [0.18, -0.35, 0.25] },
+    { id: 'heap', rx: Math.PI * 0.42, ry: 0.75, rz: Math.PI * 0.38, y: 0.28,
+      tx: 0.75, ty: 0.45, tz: -0.45, hx: 0.95, hy: -0.55, hz: 0.65,
+      armL: [1.45, 1.05, 2.05], armR: [1.85, -0.45, 1.75] },
+  ];
+  function pickLandPose() { return LAND_POSES[(Math.random() * LAND_POSES.length) | 0]; }
+
 
   /* ================================================================ Fighter */
   class Fighter {
@@ -237,14 +274,33 @@ SAK.Scene3D = (function () {
 
     update(dt) {
       this.idlePhase += dt;
-      // knockout ballistic flight
+      // knockout: ballistic flight → slapstick landing pose
       if (this.ko) {
         const k = this.ko;
+        if (k.phase === 'land') {
+          this.applyLandPose(k.landPose);
+          // tiny cartoon settle wobble
+          this.root.rotation.z += Math.sin(time * 14) * 0.004;
+          return;
+        }
         k.vel.y -= 11.5 * dt; // slightly floatier cartoon arc
         this.root.position.addScaledVector(k.vel, dt);
         this.root.rotation.x += k.spin.x * dt;
         this.root.rotation.y += (k.spin.y || 0) * dt;
         this.root.rotation.z += k.spin.z * dt;
+        // Ground hit → freeze into a random awkward pose
+        if (this.root.position.y <= 0.08 && k.vel.y < 0) {
+          this.root.position.y = 0.08;
+          k.vel.set(0, 0, 0);
+          k.spin.set(0, 0, 0);
+          k.phase = 'land';
+          k.landPose = k.landPose || pickLandPose();
+          this.applyLandPose(k.landPose);
+          const dust = this.root.position.clone(); dust.y = 0.12;
+          burst(dust, ['#c4a574', '#ffd23f', '#ffffff', '#e8d5a3'], 32, 3.2);
+          ring(dust, '#ffd23f');
+          shake = Math.max(shake, 0.5);
+        }
         return;
       }
       // springs
@@ -278,6 +334,21 @@ SAK.Scene3D = (function () {
       this.slapHand.scale.set(on ? 1.1 : 0.75, on ? 1.5 : 1.1, on ? 1.6 : 1.15);
     }
 
+    /** Snap into a slapstick KO landing pose (root + torso/head/arms). */
+    applyLandPose(P) {
+      if (!P) return;
+      const faceY = this.facing > 0 ? 0 : Math.PI;
+      this.root.rotation.set(P.rx, faceY + (P.ry || 0), P.rz || 0);
+      this.root.position.y = P.y;
+      this.torso.position.y = 0.95;
+      this.torso.rotation.set(P.tx || 0, P.ty || 0, P.tz || 0);
+      this.head.rotation.set(P.hx || 0, P.hy || 0, P.hz || 0);
+      this.applyArm(this.arms[-1], ...(P.armL || [1.2, 0.5, 0.4]));
+      this.applyArm(this.arms[1], ...(P.armR || [1.2, -0.5, 0.4]));
+      this.xEyes.visible = true; this.eyes.visible = false;
+      this.mouth.scale.set(1, 3, 1);
+    }
+
     resetPose() {
       Object.assign(this.pose, { lift: 0.12, swing: 0, elbow: 0.15, twist: 0, lean: 0, lunge: 0, guard: 0 });
       this.yaw.x = this.yaw.v = this.roll.x = this.roll.v = 0;
@@ -285,6 +356,9 @@ SAK.Scene3D = (function () {
       this.mouth.scale.set(1, 1, 1);
       this.root.position.set(0, 0, this.homeZ);
       this.root.rotation.set(0, this.facing > 0 ? 0 : Math.PI, 0);
+      this.torso.position.y = 0.95;
+      this.torso.rotation.set(0, 0, 0);
+      this.head.rotation.set(0, 0, 0);
       this.setDamage(0);
     }
 
@@ -687,16 +761,23 @@ SAK.Scene3D = (function () {
     }
     for (const c of coins) { c.rotation.z += dt * 1.5; c.position.y += Math.sin(time * 1.3 + c.userData.phase) * 0.003; }
 
-    // KO camera: hard-track the loser so they never leave frame during fly-out
+    // KO camera: hard-track the loser through fly-out AND landing pose
     if (koCam) {
       const F = koCam.track;
       if (F && F.root) {
         const head = F.headWorld();
-        // Aim at the skull (slightly lower so the spinning body stays readable)
-        camBase.look.set(head.x, Math.max(0.35, head.y - 0.2), head.z);
-        // Keep a pulled-back three-quarter offset that rides with the flyer
+        const landed = F.ko && F.ko.phase === 'land';
+        // Aim at the skull; drop look floor once they pancake so the pose reads
+        const lookY = Math.max(landed ? 0.12 : 0.35, head.y - (landed ? 0.05 : 0.2));
+        camBase.look.set(head.x, lookY, head.z);
+        // Ride a three-quarter offset; ease a touch closer on the landing beat
         const off = koCam.offset || new T.Vector3(5.2, 2.6, 3.4);
-        camBase.pos.set(head.x + off.x, Math.max(1.8, head.y + off.y), head.z + off.z);
+        const pull = landed ? 0.82 : 1;
+        camBase.pos.set(
+          head.x + off.x * pull,
+          Math.max(landed ? 1.35 : 1.8, head.y + off.y * (landed ? 0.7 : 1)),
+          head.z + off.z * pull
+        );
       }
       if (time > koCam.until) koCam = null;
     }
@@ -814,7 +895,7 @@ SAK.Scene3D = (function () {
   }
 
   /** Send the loser flying backwards off the ring. Resolves when done.
-   *  Camera hard-tracks the loser through the fly-out so they stay on-frame. */
+   *  Camera hard-tracks through fly-out + slapstick landing pose. */
   async function knockout(who) {
     const F = who === 'player' ? player : kol;
     F.xEyes.visible = true; F.eyes.visible = false;
@@ -830,25 +911,32 @@ SAK.Scene3D = (function () {
 
     // Stronger fly-out: higher arc, farther smack, more spin
     // facing +1 => fly to -z (away from camera); player flies towards +z / camera-left
+    const landPose = pickLandPose();
     F.ko = {
+      phase: 'fly',
+      landPose,
       vel: new T.Vector3(-5.2 + Math.random() * 2.2, 13.5 + Math.random() * 3, -F.facing * (13.5 + Math.random() * 2)),
       spin: new T.Vector3(-F.facing * (18 + Math.random() * 8), 5 + Math.random() * 8, 14 + Math.random() * 6)
     };
     shake = Math.max(shake, 0.7);
     burst(F.headWorld(), ['#ffd23f', '#ffffff', '#39ff88'], 24, 5);
 
-    // Follow-cam: lock onto the loser and ride with them through the fly-out
+    // Follow-cam: lock onto the loser through fly-out AND landing
     const head0 = F.headWorld();
     const followOff = new T.Vector3(5.2, 2.6, 3.4); // pulled-back three-quarter
     camBase.look.set(head0.x, Math.max(0.35, head0.y - 0.2), head0.z);
     camBase.pos.set(head0.x + followOff.x, Math.max(1.8, head0.y + followOff.y), head0.z + followOff.z);
-    // Widen FOV briefly so the spinning body stays in frame as they leave
     const fov0 = camera.fov;
     camera.fov = Math.min(58, fov0 + 10);
     camera.updateProjectionMatrix();
-    koCam = { track: F, offset: followOff, until: time + 2.05 };
+    koCam = { track: F, offset: followOff, until: time + 8 }; // cleared after landing beat
 
-    await wait(2.05);
+    // Wait until they actually hit the dirt (safety cap ~4s)
+    const t0 = time;
+    while (!(F.ko && F.ko.phase === 'land') && time - t0 < 4) await wait(0.05);
+    // Hold on the awkward pose so the gag lands before the result card
+    await wait(0.95);
+
     koCam = null;
     camera.fov = fov0;
     camera.updateProjectionMatrix();
