@@ -109,28 +109,32 @@ SAK.Scene3D = (function () {
 
   /* Hit-reaction tiers — cartoon pain scaled by how close to green (no gore). */
   const HIT_REACT = {
+    /* light  = weak / outer zone — small flinch, mild wince
+     * medium = good / mid yellow — bigger head snap + wobble
+     * heavy  = inner good / fire-boosted — strong recoil, stars, scream
+     * perfect = green centre — max slapstick pain (no gore) */
     light: {
-      yaw: 5.5, roll: 3.2, lean: 0.14, mouthY: 2.2, mouthMs: 220,
-      sx: 1.18, sy: 0.82, sz: 1.12, squashDur: 0.24,
-      stars: 0, burstN: 9, burstSpd: 2.5, shake: 0.15, hitStop: 0.03,
+      yaw: 5.5, roll: 3.2, lean: 0.14, mouthX: 1.08, mouthY: 2.0, mouthMs: 220,
+      eyeSx: 1.05, eyeSy: 0.72, sx: 1.18, sy: 0.82, sz: 1.12, squashDur: 0.24,
+      stars: 0, burstN: 9, burstSpd: 2.5, shake: 0.15, hitStop: 0.03, hop: 0,
       blushAdd: 0.12, colors: ['#ffffff', '#fff27a'], ring: '#ffffff', yelpDelay: 0
     },
     medium: {
-      yaw: 9.5, roll: 5.8, lean: 0.24, mouthY: 2.9, mouthMs: 340,
-      sx: 1.3, sy: 0.7, sz: 1.2, squashDur: 0.34,
-      stars: 2, burstN: 18, burstSpd: 3.5, shake: 0.26, hitStop: 0.055,
+      yaw: 9.5, roll: 5.8, lean: 0.24, mouthX: 1.2, mouthY: 2.7, mouthMs: 340,
+      eyeSx: 1.12, eyeSy: 0.62, sx: 1.3, sy: 0.7, sz: 1.2, squashDur: 0.34,
+      stars: 2, burstN: 18, burstSpd: 3.5, shake: 0.26, hitStop: 0.055, hop: 0.08,
       blushAdd: 0.22, colors: ['#ffffff', '#ffd23f', '#ff9a1f'], ring: '#ffd23f', yelpDelay: 0.02
     },
     heavy: {
-      yaw: 14.5, roll: 9.2, lean: 0.36, mouthY: 3.5, mouthMs: 440,
-      sx: 1.42, sy: 0.55, sz: 1.28, squashDur: 0.45,
-      stars: 4, burstN: 28, burstSpd: 4.6, shake: 0.4, hitStop: 0.09,
+      yaw: 14.5, roll: 9.2, lean: 0.36, mouthX: 1.55, mouthY: 3.6, mouthMs: 440,
+      eyeSx: 1.28, eyeSy: 1.38, sx: 1.42, sy: 0.55, sz: 1.28, squashDur: 0.45,
+      stars: 4, burstN: 28, burstSpd: 4.6, shake: 0.4, hitStop: 0.09, hop: 0.18,
       blushAdd: 0.38, colors: ['#ffd23f', '#ff9a1f', '#ff4fd8', '#ffffff'], ring: '#ff9a1f', yelpDelay: 0.04
     },
     perfect: {
-      yaw: 19, roll: 12.5, lean: 0.45, mouthY: 3.9, mouthMs: 560,
-      sx: 1.58, sy: 0.45, sz: 1.38, squashDur: 0.58,
-      stars: 6, burstN: 40, burstSpd: 5.8, shake: 0.58, hitStop: 0.13,
+      yaw: 19, roll: 12.5, lean: 0.45, mouthX: 1.8, mouthY: 4.1, mouthMs: 560,
+      eyeSx: 1.4, eyeSy: 1.55, sx: 1.58, sy: 0.45, sz: 1.38, squashDur: 0.58,
+      stars: 6, burstN: 40, burstSpd: 5.8, shake: 0.58, hitStop: 0.13, hop: 0.32,
       blushAdd: 0.55, colors: ['#39ff88', '#ffd23f', '#ffffff', '#ff4fd8', '#ff7a9a'], ring: '#39ff88', yelpDelay: 0.06
     }
   };
@@ -435,6 +439,7 @@ SAK.Scene3D = (function () {
       this.yaw.x = this.yaw.v = this.roll.x = this.roll.v = 0;
       this.ko = null; this.xEyes.visible = false; this.eyes.visible = true; this.laserUntil = 0;
       this.mouth.scale.set(1, 1, 1);
+      if (this.eyes) this.eyes.scale.set(1, 1, 1);
       this.clearHitFX();
       this.root.position.set(0, 0, this.homeZ);
       this.root.rotation.set(0, this.facing > 0 ? 0 : Math.PI, 0);
@@ -957,12 +962,27 @@ SAK.Scene3D = (function () {
     const k = R.yaw * fireMul;
     D.yaw.v += -D.facing * k;
     D.roll.v += -(R.roll * fireMul);
-    // Lean-back flinch, then settle
+    // Lean-back flinch, then settle; medium+ get a delayed wobble kick
     SAK.Tween.to(D.pose, { lean: R.lean }, 0.08, SAK.Ease.outCubic);
     setTimeout(() => SAK.Tween.to(D.pose, { lean: 0 }, 0.35, SAK.Ease.inOutQuad), 140 + R.mouthMs * 0.25);
-    // Yelp mouth
-    D.mouth.scale.set(1, R.mouthY, 1);
-    setTimeout(() => { if (!D.ko) D.mouth.scale.set(1, 1, 1); }, R.mouthMs);
+    if (tier === 'medium' || tier === 'heavy' || tier === 'perfect') {
+      setTimeout(() => { if (!D.ko) D.roll.v += (Math.random() > 0.5 ? 1 : -1) * R.roll * 0.5; }, 110);
+      setTimeout(() => { if (!D.ko) D.yaw.v += -D.facing * R.yaw * 0.28; }, 200);
+    }
+    // Wince (light/medium) or scream face (heavy/perfect)
+    D.mouth.scale.set(R.mouthX || 1, R.mouthY, 1);
+    if (D.eyes) D.eyes.scale.set(R.eyeSx || 1, R.eyeSy || 1, 1);
+    setTimeout(() => {
+      if (D.ko) return;
+      D.mouth.scale.set(1, 1, 1);
+      if (D.eyes) D.eyes.scale.set(1, 1, 1);
+    }, R.mouthMs);
+    // Tiny cartoon hop on heavier hits
+    if (R.hop) {
+      const y0 = D.root.position.y;
+      SAK.Tween.to(D.root.position, { y: y0 + R.hop }, 0.07, SAK.Ease.outCubic)
+        .then(() => { if (!D.ko) return SAK.Tween.to(D.root.position, { y: y0 }, 0.18, SAK.Ease.inCubic); });
+    }
     // Face squash
     D.clearHitFX();
     D.hitFX = {
