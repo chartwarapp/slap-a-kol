@@ -13,6 +13,9 @@
   --grey: #e7e2f5;   --grey-d: #a49bc4;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
+  /* typography tokens */
+  --outline-soft: 0 1px 0 var(--ink), 1px 0 0 var(--ink), -1px 0 0 var(--ink), 0 -1px 0 var(--ink);
+  --label-hi: 0 1px 0 rgba(255, 255, 255, .55);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
@@ -24,10 +27,15 @@ body {
 button { font-family: inherit; cursor: pointer; border: 0; color: inherit; }
 .hidden { display: none !important; }
 
-/* text outline used everywhere for the cartoon look (buttons excluded — heavy multi-offset
-   stroke turns STAKE / CLAIM labels into unreadable blobs at button sizes) */
-h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .result-title, .coin-pill {
-  text-shadow: 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink), 2px 2px 0 var(--ink), -2px 2px 0 var(--ink);
+/* Readable typography system
+   - Big titles/FX: mild 1px comic outline (never blobs)
+   - Interactive .btn labels: NO outline — dark ink on light / light on dark fills
+   - Small UI chips (upgrades, coin pill): no multi-offset stroke */
+h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
+  text-shadow: var(--outline-soft);
+}
+.coin-pill {
+  text-shadow: 0 1px 0 #0008;
 }
 
 #app {
@@ -78,17 +86,17 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 .btn {
   display: block; width: 100%; padding: 14px 18px; border-radius: 16px; font-size: 20px; letter-spacing: .5px;
   border: 3px solid var(--ink); box-shadow: 0 6px 0 var(--ink); transition: transform .06s;
-  /* sharp labels like CLOSE: ink fill + light highlight, no heavy stroke */
-  color: var(--ink); text-shadow: 0 1px 0 rgba(255, 255, 255, .55);
+  /* Interactive labels: sharp dark ink on light fills — no outline/stroke */
+  color: var(--ink); text-shadow: var(--label-hi); -webkit-text-stroke: 0; paint-order: normal;
 }
 .btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
 .btn:disabled { filter: grayscale(.8) brightness(.85); cursor: not-allowed; }
 .btn-xl { font-size: 26px; padding: 16px; }
 .btn-yellow { background: linear-gradient(#ffe46b, var(--yellow)); }
-.btn-red    { background: linear-gradient(#ff6b85, var(--red)); }
+.btn-red    { background: linear-gradient(#ff6b85, var(--red)); color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
 .btn-green  { background: linear-gradient(#6bffa0, var(--green)); }
-.btn-purple { background: linear-gradient(#ab7dff, var(--purple)); }
-.btn-grey   { background: var(--grey); text-shadow: none; font-size: 17px; }
+.btn-purple { background: linear-gradient(#ab7dff, var(--purple)); color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+.btn-grey   { background: var(--grey); color: var(--ink); text-shadow: none; font-size: 17px; }
 .pulse { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.06); } }
 
@@ -109,7 +117,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
   border: 2px solid #ffffffaa; box-shadow: 0 3px 0 #0005;
   background: #1a0b3a; pointer-events: none;
 }
-.tagline { margin: 0 0 12px; font-size: 18px; text-shadow: 0 2px 0 var(--ink); }
+.tagline { margin: 0 0 12px; font-size: 18px; text-shadow: var(--outline-soft); }
 .tagline b { color: var(--yellow); }
 .menu-buttons { display: grid; gap: 14px; }
 .menu-stats { margin-top: 14px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; font-size: 15px; }
@@ -163,7 +171,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 .hp-fill { background: linear-gradient(#7dff9e, #19c94f); transition: width .2s; }
 .right .hp-fill, .right .hp-lag { left: auto; right: 0; }
 .hp-fill.low { background: linear-gradient(#ff8a8a, #ff3b3b); }
-.hp-txt { position: absolute; inset: 0; font-size: 11px; line-height: 12px; text-align: center; text-shadow: 0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000; }
+.hp-txt { position: absolute; inset: 0; font-size: 11px; line-height: 12px; text-align: center; text-shadow: 0 1px 0 #0008; }
 .vs-center { text-align: center; }
 .vs { font-size: 32px; color: var(--yellow); line-height: .9; }
 .level { font-size: 13px; background: var(--red); padding: 2px 8px; border-radius: 8px; border: 2px solid var(--ink); }
@@ -243,7 +251,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 .upg-health { background: linear-gradient(#ff8aa0, #ff3b5c); }
 .upg-power  { background: linear-gradient(#7ec0ff, #2f80ff); }
 .upg-ico { grid-row: 1 / 3; font-size: 24px; text-shadow: 0 2px 0 #0005; }
-.upg-title { font-size: 15px; line-height: 1; }
+.upg-title { font-size: 15px; line-height: 1; color: var(--ink); text-shadow: var(--label-hi); }
 .upg-lvl { position: absolute; }
 .upg-btn { position: relative; }
 .upg-lvl { top: -9px; right: 8px; background: var(--ink); font-size: 11px; padding: 2px 6px; border-radius: 8px; }
@@ -262,7 +270,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 .fire-btn.used { filter: grayscale(1) brightness(.7); }
 
 .brace { position: absolute; left: 50%; top: 52%; width: 130px; height: 130px; transform: translate(-50%, -50%); pointer-events: none; display: grid; place-items: center; }
-.brace span { font-size: 22px; text-shadow: 0 2px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink); }
+.brace span { font-size: 22px; text-shadow: var(--outline-soft); }
 .brace-target, .brace-ring { position: absolute; border-radius: 50%; }
 .brace-target { width: 70px; height: 70px; border: 6px solid var(--green); box-shadow: 0 0 12px var(--green); }
 .brace-ring { width: 130px; height: 130px; border: 5px solid #fff; }
@@ -288,7 +296,11 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 /* ---------------------------------------------------------------- modals */
 .modal { position: absolute; inset: 0; z-index: 60; background: #0009; display: grid; place-items: center; padding: 20px; }
 .modal-card { width: 100%; max-width: 360px; background: #fff; color: var(--ink); border-radius: 22px; padding: 18px; display: grid; gap: 10px; border: 4px solid var(--ink); box-shadow: 0 8px 0 #0006; animation: pop .2s; }
-.modal-card h3 { margin: 0; text-align: center; font-size: 28px; color: #fff; }
+.modal-card h3 { margin: 0; text-align: center; font-size: 28px; color: var(--ink); text-shadow: none; }
+/* Gradient-top modals: keep white title with thin comic outline only */
+.wallet-card h3, .vault-card h3, .pvp-card h3, .submit-card h3, .lb-card h3 {
+  color: #fff; text-shadow: var(--outline-soft);
+}
 .modal-card p, .modal-card li { font-family: system-ui, sans-serif; margin: 0; }
 .wallet-card { text-align: center; background: linear-gradient(#ab9bff, #fff 45%); }
 .wallet-logo { font-size: 52px; }
@@ -422,7 +434,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 .level { background: #b44dff; }
 .vs { color: #39ff88; }
 .sub-stats { text-align: center; font-size: 12px; color: var(--ink); text-shadow: none; margin-top: 2px; }
-.float-text.perfect { color: #39ff88; text-shadow: 0 0 12px #39ff88, 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink); }
+.float-text.perfect { color: #39ff88; text-shadow: 0 0 10px #39ff88aa, var(--outline-soft); }
 .banner { color: #39ff88; }
 .result-card { border-color: #39ff88; box-shadow: 0 10px 0 #0006, 0 0 30px #39ff8866; }
 .result-card.lose { border-color: #ff3b5c; box-shadow: 0 10px 0 #0006, 0 0 30px #ff3b5c66; }
@@ -530,3 +542,13 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .resul
 @media (max-height: 560px) {
   .logo-splash { display: none; }
 }
+
+/* ---------------------------------------------------------------- readable interactive chips (no comic stroke) */
+.mode-btn, .bet-chip, .vault-amounts button, .acc-picks button, .diff-picks button, .lb-tabs button, .kd-remove {
+  text-shadow: none; -webkit-text-stroke: 0;
+}
+.mode-btn b { text-shadow: none; }
+.pvp-row button { text-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+.fire-btn .fire-lbl { text-shadow: var(--label-hi); }
+.pu-btn .pu-lbl { text-shadow: var(--label-hi); }
+.fighter-chip b { text-shadow: var(--outline-soft); }
