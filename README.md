@@ -20,6 +20,8 @@ You don't need a build step. It's plain static HTML/CSS/JS, and Three.js r158 is
 
 Controls: **tap / click** (or **Space / Enter / A / L**) to lock **your** meter. Keys **F / H / R** = Golden Fist / Helmet / Degen Rage.
 
+Haptics use the Vibration API (Android Chrome; iPhone Safari does not support web vibration).
+
 ## How to play
 
 1. **Create your fighter**: name, colour, catchphrase. You show up on the LEFT in every fight.

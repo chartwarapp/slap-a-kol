@@ -88,7 +88,33 @@
     b.classList.remove('hidden'); b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
     await wait((ms || 1000) / 1000); b.classList.add('hidden');
   }
-  function haptic(ms) { if (S.settings.haptics && navigator.vibrate) navigator.vibrate(ms); }
+  /* Slap haptics mirror scene3d reactTier (light/medium/heavy/perfect).
+   * Golden Fist (fire) bumps weak→medium and good→heavy; perfect stays max.
+   * Vibration API: Android Chrome yes; iPhone Safari no. */
+  const HAPTIC_SLAP = {
+    light: 15,
+    medium: 35,
+    heavy: [50, 30, 40],
+    perfect: [80, 40, 80, 40, 120]
+  };
+  function haptic(ms) {
+    if (!S.settings.haptics || !navigator.vibrate) return;
+    try { navigator.vibrate(ms); } catch (e) { /* unsupported / blocked */ }
+  }
+  /** Map grade (+ fire / distance) → slap vibration pattern. */
+  function hapticSlap(grade, fire, dist) {
+    let tier = null;
+    if (!grade || grade === 'miss') return;
+    if (grade === 'perfect') tier = 'perfect';
+    else if (grade === 'weak') tier = fire ? 'medium' : 'light';
+    else if (grade === 'good') {
+      if (fire) tier = 'heavy';
+      else if (dist != null && dist < 20) tier = 'heavy';
+      else tier = 'medium';
+    } else tier = 'medium';
+    const pat = HAPTIC_SLAP[tier];
+    if (pat != null) haptic(pat);
+  }
   const appRect = () => $('#app').getBoundingClientRect();
 
   // Animated PTS counter
@@ -889,7 +915,7 @@
     const doImpact = () => {
       if (attackerWins) {
         A.slap(grade.mult * (fire ? 1.4 : 1));
-        haptic(grade.id === 'perfect' || fire ? 60 : 30);
+        hapticSlap(slapGrade, fire, atk.dist);
         if (fire) flash('#ffb000'); else if (grade.id === 'perfect') flash('#39ff88');
         else flash('#ffe23d');
         if (grade.id === 'perfect' && Scene) Scene.laserEyes(slapWho, 1.0);
