@@ -43,7 +43,7 @@
 
       <div class="menu-buttons">
         <button id="btn-play" class="btn btn-yellow btn-xl pulse">🖐 SEND IT · FREE PLAY</button>
-        <button id="btn-pvp" class="btn btn-red">⚔ CHALLENGE A PLAYER<small class="btn-sub">PvP beta · AI stand-in if nobody's online</small></button>
+        <button id="btn-pvp" class="btn btn-red">⚔ CHALLENGE A PLAYER<small class="btn-sub">Local 1v1 or AI · dual-meter Bo3/Bo5</small></button>
         <div class="row">
           <button id="btn-connect" class="btn btn-purple">👛 CONNECT WALLET<small class="btn-sub">Solana · coming soon</small></button>
           <button id="btn-vault" class="btn btn-green">🏦 STAKE PTS<small class="btn-sub" id="vault-sub">earn yield + boost</small></button>
@@ -100,8 +100,9 @@
     <div id="taunt" class="taunt hidden"></div>
     <div id="p-taunt" class="taunt left hidden"></div>
     <div id="prompt" class="prompt">TAP TO SLAP</div>
+    <div id="round-score" class="round-score hidden">0 — 0</div>
 
-    <!-- brace timing ring during the KOL's turn -->
+    <!-- brace timing ring (legacy; hidden — dual-meter replaced it) -->
     <div id="brace" class="brace hidden"><div class="brace-target"></div><div class="brace-ring" id="brace-ring"></div><span>BRACE!</span></div>
 
     <!-- Power-up rail (limited-use consumables) -->
@@ -109,7 +110,21 @@
     <div id="pu-status" class="pu-status"></div>
 
     <div class="bottom-zone">
-      <div id="meter" class="meter"></div>
+      <!-- Dual meters: ATTACK (jerky) + BRACE (tap-lock). Same green centre. -->
+      <div id="dual-meters" class="dual-meters">
+        <div class="meter-panel" id="panel-atk" data-side="atk">
+          <div class="meter-role atk-role">🥊 ATTACK</div>
+          <div id="meter-atk" class="meter"></div>
+          <div class="meter-hint" id="hint-atk">TAP LEFT / A</div>
+        </div>
+        <div class="meter-panel" id="panel-def" data-side="def">
+          <div class="meter-role def-role">🛡 BRACE</div>
+          <div id="meter-def" class="meter"></div>
+          <div class="meter-hint" id="hint-def">TAP RIGHT / L</div>
+        </div>
+      </div>
+      <!-- Legacy single meter mount (unused; kept so old refs don't NPE) -->
+      <div id="meter" class="meter hidden" aria-hidden="true"></div>
       <div id="upgrade-bar" class="upgrade-bar">
         <button class="upg-btn upg-health" data-upgrade="health">
           <span class="upg-ico">❤</span><span class="upg-title">HEALTH</span>
@@ -189,13 +204,14 @@
     <div class="modal-card pvp-card">
       <h3>⚔ PVP LOBBY</h3>
       <div id="pvp-lobby">
-        <p class="fine dark">Live PvP is in beta. If no one accepts, an <b>AI stand-in</b> fights in their place. Wagers are in PTS.</p>
+        <p class="fine dark">Dual-meter challenge: closer to the green centre wins each round. <b>Local 1v1</b> = same device (left = attack, right = brace). Online search still falls back to an AI stand-in.</p>
         <div id="pvp-modes" class="mode-row light"></div>
         <div class="bet-label dark-lbl">WAGER <span id="pvp-wager-hint"></span></div>
         <div id="pvp-bets" class="bet-chips light"></div>
+        <button class="btn btn-red btn-xl" id="pvp-local">🖐 LOCAL 1v1 · SAME DEVICE<small class="btn-sub">Hotseat · split meters · Bo3 / Bo5</small></button>
         <div class="pvp-head"><span>🟢 ONLINE DEGENS</span><span id="pvp-count"></span></div>
         <div id="pvp-list" class="pvp-list"></div>
-        <button class="btn btn-yellow" id="pvp-quick">⚡ QUICK MATCH</button>
+        <button class="btn btn-yellow" id="pvp-quick">⚡ QUICK MATCH (AI)</button>
         <button class="btn btn-grey" data-close>CLOSE</button>
       </div>
       <div id="pvp-search" class="pvp-search hidden">
@@ -271,4 +287,3 @@
 <script src="js/game.js"></script>
 </body>
 </html>
-<!-- pages 2026-10-05T13:46:00-04:00 -->

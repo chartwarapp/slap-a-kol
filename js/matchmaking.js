@@ -1,10 +1,11 @@
 /* =========================================================================
- * Matchmaking — STUB.
+ * Matchmaking — soft-launch stub + local hotseat.
  * -------------------------------------------------------------------------
  * Design target: live player-vs-player challenges with an optional PTS wager.
- * Prototype behaviour: there is no server, so we list fake "online" players,
- * pretend to search / wait for an accept, then FALL BACK TO AN AI STAND-IN
- * built from that player's profile. The AI fight path never blocks on this.
+ * Soft launch:
+ *   - LOCAL 1v1 (same device) is the real dual-meter PvP path (see game.js)
+ *   - Online search lists fake "online" players, pretends to wait, then
+ *     falls back to an AI stand-in that uses the SAME dual-meter rules.
  *
  * Later: replace listOnline() / findMatch() with a realtime backend
  * (WebSocket / Supabase Realtime / Colyseus). The server should own the RNG,
@@ -32,11 +33,11 @@ SAK.Matchmaking = (function () {
     };
   }
 
-  /** Turn a player profile into an AI opponent ("stand-in") for the fight engine. */
+  /** Turn a player profile into an AI opponent ("stand-in") for dual-meter fights. */
   function standIn(p) {
     return Object.assign({
       id: 'pvp_' + p.name, name: p.name, handle: '@' + p.name, level: 'PVP', pvp: true,
-      tagline: `${p.rank} · ${p.winRate}% win rate — AI stand-in while they're AFK`,
+      tagline: `${p.rank} · ${p.winRate}% win rate — AI stand-in (dual-meter rules)`,
       look: p.look,
       taunts: ['gm. prepare to get slapped.', 'ratio + slapped', 'my cheeks have diamond hands', 'imagine losing to an AI stand-in lol']
     }, SAK.customKolStats(Math.min(5, p.difficulty)));
@@ -59,11 +60,12 @@ SAK.Matchmaking = (function () {
         const tick = () => {
           if (cancelled) return;
           if (i < steps.length) { onStatus && onStatus(steps[i++], false); timer = setTimeout(tick, 1100); }
-          else { onStatus && onStatus('🤖 AI stand-in deployed. SEND IT!', true); timer = setTimeout(() => !cancelled && resolve({ live: false, opponent: standIn(target) }), 800); }
+          else { onStatus && onStatus('🤖 AI stand-in deployed. Dual-meter rules. SEND IT!', true); timer = setTimeout(() => !cancelled && resolve({ live: false, opponent: standIn(target) }), 800); }
         };
         tick();
       });
     },
-    cancel() { cancelled = true; clearTimeout(timer); }
+    cancel() { cancelled = true; clearTimeout(timer); },
+    standIn
   };
 })();

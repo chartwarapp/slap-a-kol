@@ -6,10 +6,10 @@
  * Upgrades / Golden Fist cost PTS. Wallet connect is a mock Solana
  * placeholder. Roster = built-in parody KOLs + user-submitted KOLs.
  *
- * Fight loop:
- *   PLAYER turn : meter swings → tap locks → slap anim → damage
- *   KOL turn    : AI winds up → (optional) brace tap → slap anim → damage
- *   … repeat until someone hits 0 HP → knockout fly-off → result screen
+ * Fight loop (dual-meter challenge):
+ *   Each ROUND: attacker (jerky meter) + defender (brace meter) lock together.
+ *   Closer to the green centre wins the exchange. Tie → attacker edge.
+ *   Quick Duel = best of 3 · Classic = best of 5. Then KO fly-off → result.
  * ========================================================================= */
 (function () {
   'use strict';
@@ -25,6 +25,8 @@
   const S = SAK.Storage.load();      // persistent save
   const W = SAK.Wallet, A = SAK.Audio, P = SAK.Points, V = SAK.Vault;
   let Scene = null;                  // SAK.Scene3D once WebGL is up
+  let MeterAtk = null, MeterDef = null;  // dual meters
+  let aiLockTimer = 0, roundTimer = 0;
 
   /* ----------------------------------------------------------- derived stats */
   const playerMaxHp = () => SAK.PLAYER.baseHp + S.upgrades.health * SAK.PLAYER.hpPerLevel;
@@ -377,50 +379,6 @@
   let F = null;   // current fight state
   let lastSlots = 1;  // UGC slots unlocked (to announce new unlocks)
 
-  function startFight(kol, bet, opts) {
-    A.unlock();
-    opts = opts || {};
-    bet = bet || 0;
-    const mode = opts.mode || 'classic';
-    if (bet > 0) {   // optional bet is escrowed up-front
-      if (bet < kol.minBet) bet = 0;
-      else if (!P.spend(bet)) { toast('Not enough PTS for that bet'); return; }
-      else A.coin();
-    }
-    grantDailyFist();
-    F = {
-      kol, bet, hits: 0,
-      pMax: playerMaxHp(), pHp: playerMaxHp(),
-      kMax: kol.hp, kHp: kol.hp,
-      turn: 'intro', started: false,
-      perfects: 0, maxHit: 0, slaps: 0,
-      fireArmed: false,
-      pu: { used: {}, helmet: 0, rage: 0 },   // power-up state for this fight
-      brace: null,
-      mode, duel: { p: null, k: null }, opts
-    };
-    $('#duel-score') && $('#duel-score').remove();
-    if (Scene) { Scene.setOpponent(kol.look); Scene.resetFight(); }
-    $('#p-portrait').innerHTML = SAK.avatarSVG(playerLook());
-    $('#p-name').textContent = profile().name;
-    $('#k-portrait').innerHTML = SAK.avatarSVG(kol.look);
-    $('#k-name').textContent = kol.name;
-    $('#fight-level').textContent = kol.pvp ? 'PVP · AI' : kol.custom ? 'FAN KOL' : 'LEVEL ' + kol.level;
-    const M = SAK.MODES[mode];
-    $('#stake-tag').innerHTML = `${M.icon} ${M.label} · ` + (bet
-      ? `BET ${ptsHTML()} ${fmt(bet)} → ${fmt(boosted(bet * kol.payout))}`
-      : `FREE · WIN ${ptsHTML()} +${fmt(modePts(kol, mode))}`);
-    $('#upgrade-bar').classList.remove('gone');
-    $('#taunt').classList.add('hidden'); $('#p-taunt').classList.add('hidden');
-    $('#brace').classList.add('hidden');
-    renderHp(true); renderUpgrades(); renderPowerups();
-    if (Scene) { Scene.setHelmet(false); Scene.setRage(false); }
-    show('fight');
-    sayPlayer(profile().phrase);
-    setTimeout(() => F && F.kol === kol && say(pick(kol.taunts)), 900);
-    playerTurn();
-  }
-
   function say(text) {
     const t = $('#taunt'); t.textContent = text; t.classList.remove('hidden');
     t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
@@ -491,9 +449,9 @@
     }
     S.powerups[id]--; F.pu.used[id] = true; SAK.Storage.save();
     haptic(30);
-    if (id === 'fist') { F.fireArmed = true; A.fire(); if (Scene && F.turn === 'player') Scene.setFireArmed(true); }
+    if (id === 'fist') { F.fireArmed = true; A.fire(); if (Scene && F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player') Scene.setFireArmed(true); }
     if (id === 'helmet') { F.pu.helmet = pu.hits; A.brace(); if (Scene) Scene.setHelmet(true); }
-    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'player') SAK.Meter.start(meterSpeed(F.kol) * pu.meterMult); }
+    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player' && MeterAtk) MeterAtk.start((SAK.CHALLENGE.attackerBaseSpeed + (F.kol.difficulty - 1) * 12) * pu.meterMult); }
     toast(`${pu.icon} ${pu.name}: ${pu.desc}`);
     renderPowerups(); renderUpgrades();
   }
@@ -517,147 +475,338 @@
     renderUpgrades();
   }
 
-  /* --- player turn ------------------------------------------------------ */
-  function playerTurn() {
-    F.turn = 'player';
-    const p = $('#prompt'); p.textContent = 'TAP TO SLAP'; p.classList.remove('kol-turn', 'hidden');
-    $('#meter').classList.remove('dim');
-    if (F.fireArmed && Scene) Scene.setFireArmed(true);
-    SAK.Meter.start(meterSpeed(F.kol) * (F.pu.rage > 0 ? SAK.POWERUPS.rage.meterMult : 1));
+
+  function startFight(kol, bet, opts) {
+    A.unlock();
+    opts = opts || {};
+    bet = bet || 0;
+    const mode = opts.mode || 'classic';
+    if (bet > 0) {   // optional bet is escrowed up-front
+      if (bet < kol.minBet) bet = 0;
+      else if (!P.spend(bet)) { toast('Not enough PTS for that bet'); return; }
+      else A.coin();
+    }
+    grantDailyFist();
+    clearTimeout(aiLockTimer);
+    const bestOf = (SAK.MODES[mode] && SAK.MODES[mode].bestOf) || (mode === 'duel' ? 3 : 5);
+    const winsNeeded = Math.ceil(bestOf / 2);
+    const localPvp = !!opts.localPvp;
+    F = {
+      kol, bet, hits: 0,
+      pMax: playerMaxHp(), pHp: playerMaxHp(),
+      kMax: kol.hp, kHp: kol.hp,
+      turn: 'intro', started: false,
+      perfects: 0, maxHit: 0, slaps: 0,
+      fireArmed: false,
+      pu: { used: {}, helmet: 0, rage: 0 },
+      brace: null,
+      mode, duel: { p: null, k: null }, opts,
+      localPvp,
+      challenge: {
+        bestOf, winsNeeded,
+        pWins: 0, kWins: 0,
+        round: 0,
+        attacker: 'player',   // who attacks this round
+        locks: { atk: null, def: null },
+        resolving: false
+      }
+    };
+    $('#duel-score') && $('#duel-score').remove();
+    if (Scene) { Scene.setOpponent(kol.look); Scene.resetFight(); }
+    $('#p-portrait').innerHTML = SAK.avatarSVG(playerLook());
+    $('#p-name').textContent = localPvp ? 'P1 · ' + profile().name : profile().name;
+    $('#k-portrait').innerHTML = SAK.avatarSVG(kol.look);
+    $('#k-name').textContent = localPvp ? 'P2 · ' + kol.name : kol.name;
+    const tag = localPvp ? 'LOCAL 1v1' : (kol.pvp ? 'PVP · AI' : (kol.custom ? 'FAN KOL' : 'LEVEL ' + kol.level));
+    $('#fight-level').textContent = tag;
+    const M = SAK.MODES[mode];
+    $('#stake-tag').innerHTML = `${M.icon} ${M.label} · Bo${bestOf} · ` + (bet
+      ? `BET ${ptsHTML()} ${fmt(bet)} → ${fmt(boosted(bet * kol.payout))}`
+      : `FREE · WIN ${ptsHTML()} +${fmt(modePts(kol, mode))}`);
+    $('#upgrade-bar').classList.remove('gone');
+    $('#taunt').classList.add('hidden'); $('#p-taunt').classList.add('hidden');
+    $('#brace').classList.add('hidden');
+    renderHp(true); renderUpgrades(); renderPowerups(); renderRoundScore();
+    if (Scene) { Scene.setHelmet(false); Scene.setRage(false); }
+    show('fight');
+    sayPlayer(profile().phrase);
+    setTimeout(() => F && F.kol === kol && say(pick(kol.taunts)), 900);
+    setTimeout(() => F && F.kol === kol && startChallengeRound(), 700);
   }
 
-  async function playerSlap() {
-    F.turn = 'busy';
-    F.started = true; F.slaps++;
+  function renderRoundScore() {
+    const el = $('#round-score');
+    if (!F || !F.challenge) { el.classList.add('hidden'); return; }
+    const C = F.challenge;
+    el.classList.remove('hidden');
+    el.innerHTML = `<span class="rs-p">${C.pWins}</span><span class="sep">—</span><span class="rs-k">${C.kWins}</span>`
+      + `<span class="rs-meta">ROUND ${Math.min(C.round + (F.turn === 'challenge' ? 0 : 1), C.bestOf)} · FIRST TO ${C.winsNeeded}</span>`;
+    // Mirror score onto HP bars so the VS bar still feels alive
+    const pPct = (C.pWins / C.winsNeeded) * 100;
+    const kPct = (C.kWins / C.winsNeeded) * 100;
+    $('#p-hp').style.width = Math.max(8, pPct) + '%';
+    $('#p-hp-lag').style.width = Math.max(8, pPct) + '%';
+    $('#k-hp').style.width = Math.max(8, kPct) + '%';
+    $('#k-hp-lag').style.width = Math.max(8, kPct) + '%';
+    $('#p-hp').classList.toggle('low', C.pWins === 0);
+    $('#k-hp').classList.toggle('low', C.kWins === 0);
+    $('#p-hp-txt').textContent = `${C.pWins} / ${C.winsNeeded}`;
+    $('#k-hp-txt').textContent = `${C.kWins} / ${C.winsNeeded}`;
+  }
+
+  function stopMeters() {
+    clearTimeout(aiLockTimer);
+    clearTimeout(roundTimer);
+    if (MeterAtk) MeterAtk.stop();
+    if (MeterDef) MeterDef.stop();
+  }
+
+  function playerControls(side) {
+    // side: 'atk' | 'def'
+    if (!F) return false;
+    if (F.localPvp) return true; // both humans — either can tap their panel
+    const atkIsPlayer = F.challenge.attacker === 'player';
+    return side === 'atk' ? atkIsPlayer : !atkIsPlayer;
+  }
+
+  function whoLabel(side) {
+    const atkIsPlayer = F.challenge.attacker === 'player';
+    if (F.localPvp) {
+      if (side === 'atk') return atkIsPlayer ? 'P1 · TAP / A' : 'P2 · TAP / L';
+      return atkIsPlayer ? 'P2 · TAP / L' : 'P1 · TAP / A';
+    }
+    if (side === 'atk') return atkIsPlayer ? 'YOU · TAP / A' : 'AI ATTACKING…';
+    return atkIsPlayer ? 'AI BRACING…' : 'YOU · TAP / L';
+  }
+
+  function startChallengeRound() {
+    if (!F || ['over', 'done'].includes(F.turn)) return;
+    const C = F.challenge;
+    C.round++;
+    C.locks = { atk: null, def: null };
+    C.resolving = false;
+    // Alternate attacker: round 1 player, round 2 opponent, …
+    C.attacker = (C.round % 2 === 1) ? 'player' : 'kol';
+    F.turn = 'challenge';
+    F.started = true;
+    F.slaps++;
     $('#upgrade-bar').classList.add('gone');
-    $('#prompt').classList.add('hidden');
-    const { zone } = SAK.Meter.lock();
-    let grade = zone;
-    const fire = F.fireArmed;
-    // Golden Fist never misses: bump weak/miss up to good
-    if (fire && (grade.id === 'miss' || grade.id === 'weak')) grade = SAK.METER.zones.find(z => z.id === 'good');
-    if (fire) F.fireArmed = false;
-    const rage = F.pu.rage > 0;
-    if (rage) { F.pu.rage--; if (!F.pu.rage && Scene) Scene.setRage(false); }
-    renderPowerups();
-    if (grade.id === 'perfect' && Scene) Scene.laserEyes('player', 1.1);   // 👁👁 perfect-slap laser eyes
+    $('#brace').classList.add('hidden');
 
-    const dmg = Math.round(playerPower() * grade.mult * (fire ? SAK.POWERUPS.fist.mult : 1) * (rage ? SAK.POWERUPS.rage.damageMult : 1));
-    const doImpact = () => {
-      const pos = Scene ? Scene.screenPos('kol') : { x: 240, y: 300 };
-      if (grade.id === 'miss') { F.duel.p = 0; A.miss(); floatText(pos.x, pos.y - 20, 'NGMI!', 'miss'); say(pick(SAK.COPY.missTaunts)); return; }
-      F.duel.p = dmg;
-      F.kHp = Math.max(0, F.kHp - dmg);
-      F.hits++;
-      F.maxHit = Math.max(F.maxHit, dmg);
-      if (grade.id === 'perfect') { F.perfects++; A.perfect(); if (Math.random() < 0.5) sayPlayer(profile().phrase); }
-      A.slap(grade.mult * (fire ? 1.4 : 1));
-      haptic(grade.id === 'perfect' || fire ? 60 : 30);
-      if (fire) flash('#ffb000'); else if (grade.id === 'perfect') flash('#39ff88');
-      floatText(pos.x, pos.y - 30, `${fire ? '🔥 ' : rage ? '😤 ' : grade.id === 'perfect' ? '👁👁 ' : ''}${grade.label}<small>-${dmg}</small>`, fire ? 'fire' : grade.id);
-      const pk = $('#k-portrait'); pk.classList.remove('hit'); void pk.offsetWidth; pk.classList.add('hit');
-      pk.innerHTML = SAK.avatarSVG(F.kol.look, { blush: true });
-      renderHp();
-    };
+    const atkName = C.attacker === 'player' ? (F.localPvp ? 'P1' : profile().name) : (F.localPvp ? 'P2' : F.kol.name);
+    const p = $('#prompt');
+    p.textContent = `ROUND ${C.round} · ${atkName.toUpperCase()} ATTACKS`;
+    p.classList.toggle('kol-turn', C.attacker !== 'player');
+    p.classList.remove('hidden');
 
-    if (Scene) await Scene.slap('player', { grade: grade.id, fire, windup: 0.32, onImpact: doImpact });
-    else { await wait(0.4); doImpact(); }
+    $('#hint-atk').textContent = whoLabel('atk');
+    $('#hint-def').textContent = whoLabel('def');
+    $('#hint-atk').classList.toggle('dim', !playerControls('atk'));
+    $('#hint-def').classList.toggle('dim', !playerControls('def'));
+    $('#panel-atk').classList.toggle('you-control', playerControls('atk'));
+    $('#panel-def').classList.toggle('you-control', playerControls('def'));
+    $('#panel-atk').classList.remove('locked');
+    $('#panel-def').classList.remove('locked');
 
-    if (F.mode === 'classic' && F.kHp <= 0) return knockout('kol');
-    await wait(0.25);
-    kolTurn();
+    renderRoundScore();
+
+    const CH = SAK.CHALLENGE;
+    let atkSpeed = CH.attackerBaseSpeed + (F.kol.difficulty - 1) * 12;
+    if (F.pu.rage > 0 && C.attacker === 'player') atkSpeed *= SAK.POWERUPS.rage.meterMult;
+    if (F.fireArmed && Scene && C.attacker === 'player') Scene.setFireArmed(true);
+
+    MeterAtk.setJerky(true);
+    MeterDef.setJerky(false);
+    MeterAtk.unfreeze(); MeterDef.unfreeze();
+    MeterAtk.start(atkSpeed);
+    MeterDef.start(CH.defenderSpeed);
+
+    // Schedule AI lock(s) for any side the human doesn't control
+    scheduleAiLocks();
+    // Soft timeout: auto-whiff any unlocked side so rounds can't hang
+    clearTimeout(roundTimer);
+    roundTimer = setTimeout(() => {
+      if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
+      if (!F.challenge.locks.atk) lockSide('atk', true, (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
+      if (!F.challenge.locks.def) lockSide('def', true, (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
+    }, (SAK.CHALLENGE.windowMs || 4500));
   }
 
-  /* --- KOL turn (AI) ------------------------------------------------------ */
-  function rollAiGrade(kol) {
-    const a = kol.accuracy, r = Math.random();
-    const pPerfect = 0.06 + a * 0.3, pGood = 0.3 + a * 0.35, pMiss = 0.03 + (1 - a) * 0.14;
-    const id = r < pPerfect ? 'perfect' : r < pPerfect + pGood ? 'good' : r < 1 - pMiss ? 'weak' : 'miss';
-    return SAK.METER.zones.find(z => z.id === id);
+  function gaussian() {
+    // Box-Muller
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   }
 
-  async function kolTurn() {
-    F.turn = 'kol';
-    SAK.Meter.unfreeze(); SAK.Meter.stop();
-    $('#meter').classList.add('dim');
-    const p = $('#prompt'); p.textContent = `${F.kol.name.toUpperCase()}'S TURN`; p.classList.add('kol-turn'); p.classList.remove('hidden');
-    if (Math.random() < 0.35) say(pick(F.kol.taunts));
-    await wait(0.45);
-
-    const grade = rollAiGrade(F.kol);
-    const windup = 0.55 + Math.random() * 0.55;
-    const impactIn = windup + 0.06 + 0.1;  // matches Scene3D.slap timing
-    // brace ring shrinks onto the target exactly at impact
-    const brace = $('#brace'), ring = $('#brace-ring');
-    brace.classList.remove('hidden', 'good', 'bad');
-    ring.style.transition = 'none'; ring.style.transform = 'scale(1.9)'; void ring.offsetWidth;
-    ring.style.transition = `transform ${impactIn}s linear`; ring.style.transform = 'scale(0.54)';
-    p.textContent = 'TAP TO BRACE!';
-    F.brace = { impactAt: performance.now() + impactIn * 1000, tapped: false, braced: false };
-    F.turn = 'kol-windup';
-    if (grade.id === 'perfect' && Scene) setTimeout(() => Scene.laserEyes('kol', 0.9), windup * 1000);
-
-    const doImpact = () => {
-      F.turn = 'busy';
-      const pos = Scene ? Scene.screenPos('player') : { x: 240, y: 400 };
-      brace.classList.add('hidden');
-      if (grade.id === 'miss') { F.duel.k = 0; A.miss(); floatText(pos.x, pos.y - 40, 'DODGED! 😎', 'good'); return; }
-      const braced = F.brace.braced;
-      const helmet = F.pu.helmet > 0;
-      if (helmet) { F.pu.helmet--; if (!F.pu.helmet && Scene) setTimeout(() => Scene.setHelmet(false), 400); renderPowerups(); }
-      const dmg = Math.round(F.kol.power * grade.mult * (0.9 + Math.random() * 0.2) * (braced ? SAK.BRACE.damageMult : 1) * (helmet ? SAK.POWERUPS.helmet.damageMult : 1));
-      F.pHp = Math.max(0, F.pHp - dmg);
-      F.duel.k = dmg;
-      A.slap(grade.mult * (braced ? 0.6 : 1)); haptic(braced ? 20 : 80);
-      flash(braced ? '#2ee66b' : '#ff3b5c');
-      floatText(pos.x, pos.y - 50, `${helmet ? '⛑ ' : ''}${braced ? 'BRACED! ' : grade.id === 'perfect' ? 'REKT! ' : ''}<small>-${dmg}</small>`, braced ? 'good' : 'dmg-in');
-      const pp = $('#p-portrait'); pp.classList.remove('hit'); void pp.offsetWidth; pp.classList.add('hit');
-      pp.innerHTML = SAK.avatarSVG(playerLook(), { blush: true });
-      renderHp();
-    };
-
-    if (Scene) await Scene.slap('kol', { grade: grade.id, windup, onImpact: doImpact });
-    else { await wait(impactIn); doImpact(); }
-    brace.classList.add('hidden');
-    if (F.mode === 'duel') return resolveDuel();
-    if (F.pHp <= 0) return knockout('player');
-    await wait(0.2);
-    playerTurn();
+  function aiTargetAngle(accuracy, isAttacker) {
+    // Higher accuracy → tighter around centre. Attack is slightly harder (wider sigma).
+    const a = Math.max(0.15, Math.min(0.95, accuracy || 0.5));
+    const sigma = (isAttacker ? 48 : 38) * (1 - a) + (isAttacker ? 10 : 7);
+    let ang = gaussian() * sigma;
+    // Occasional whiff
+    if (Math.random() < 0.04 + (1 - a) * 0.08) ang = (Math.random() < 0.5 ? -1 : 1) * (55 + Math.random() * 35);
+    return Math.max(-88, Math.min(88, ang));
   }
 
-  function tryBrace() {
-    const b = F.brace; if (!b || b.tapped) return;
-    b.tapped = true;
-    const early = (b.impactAt - performance.now()) / 1000;
-    const ok = early >= -0.05 && early <= SAK.BRACE.window;
-    b.braced = ok;
-    $('#brace').classList.add(ok ? 'good' : 'bad');
-    A.brace();
-    if (Scene) { Scene.setBrace(true); setTimeout(() => Scene.setBrace(false), 450); }
-    if (!ok) $('#prompt').textContent = 'TOO EARLY!';
+  function scheduleAiLocks() {
+    clearTimeout(aiLockTimer);
+    if (!F || F.localPvp) return; // both humans
+    const CH = SAK.CHALLENGE;
+    const [d0, d1] = CH.aiLockDelay || [0.55, 1.35];
+    const delay = (d0 + Math.random() * (d1 - d0)) * 1000;
+    aiLockTimer = setTimeout(() => {
+      if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
+      const atkIsPlayer = F.challenge.attacker === 'player';
+      const acc = F.kol.accuracy || 0.5;
+      // AI locks the side(s) it controls
+      if (!atkIsPlayer && !F.challenge.locks.atk) {
+        lockSide('atk', true, aiTargetAngle(acc, true));
+      }
+      if (atkIsPlayer && !F.challenge.locks.def) {
+        // slight extra delay feel for brace
+        setTimeout(() => {
+          if (!F || F.turn !== 'challenge' || F.challenge.locks.def) return;
+          lockSide('def', true, aiTargetAngle(acc * 0.95, false));
+        }, 180 + Math.random() * 420);
+      }
+      // If AI is attacker, also schedule defender (player) — already human.
+      // If player is attacker, AI only braces (above).
+      // If AI is attacker we locked atk; player braces manually.
+    }, delay);
+
+    // When AI is attacker, lock attack after delay (handled above).
+    // When player is attacker, only brace is AI — handled above.
+    // Also: if AI is attacker we need the atk lock — the condition !atkIsPlayer covers it.
   }
 
-  /* --- quick duel: compare the single slaps -------------------------------- */
-  async function resolveDuel() {
-    F.turn = 'over';
-    SAK.Meter.stop();
-    $('#prompt').classList.add('hidden');
-    const p = F.duel.p || 0, k = F.duel.k || 0;
-    const el = document.createElement('div');
-    el.id = 'duel-score'; el.className = 'duel-score';
-    el.innerHTML = `<span class="${p > k ? 'win' : p < k ? 'lose' : ''}">${p}</span><span class="vs-mini">VS</span><span class="${k > p ? 'win' : k < p ? 'lose' : ''}">${k}</span>`;
-    $('#fx-layer').appendChild(el);
+  function lockSide(side, fromAi, forcedAngle) {
+    if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
+    const C = F.challenge;
+    if (C.locks[side]) return;
+    const meter = side === 'atk' ? MeterAtk : MeterDef;
+    const result = (fromAi && forcedAngle != null)
+      ? meter.forceLock(forcedAngle)
+      : meter.lock();
+    if (result.already) return;
+    C.locks[side] = result;
+    $(side === 'atk' ? '#panel-atk' : '#panel-def').classList.add('locked');
     A.click();
-    await wait(1.2);
-    el.remove();
-    if (p === k) { banner('CRAB MARKET 🦀', '#ffd23f', 1200); await wait(1.2); return endFight(false, true); }
-    knockout(p > k ? 'kol' : 'player');
+    haptic(18);
+    if (C.locks.atk && C.locks.def) resolveChallengeRound();
   }
+
+  async function resolveChallengeRound() {
+    if (!F || F.challenge.resolving) return;
+    F.challenge.resolving = true;
+    F.turn = 'busy';
+    clearTimeout(aiLockTimer);
+    stopMeters();
+    $('#prompt').classList.add('hidden');
+
+    const C = F.challenge;
+    const atk = C.locks.atk, def = C.locks.def;
+    const atkDist = atk.dist, defDist = def.dist;
+    // Closer to centre wins. Tie → attacker edge (documented).
+    let attackerWins;
+    if (atkDist < defDist) attackerWins = true;
+    else if (defDist < atkDist) attackerWins = false;
+    else attackerWins = (SAK.CHALLENGE.tieBreak !== 'defender'); // default attacker
+
+    const playerIsAtk = C.attacker === 'player';
+    const playerWonRound = playerIsAtk ? attackerWins : !attackerWins;
+
+    // Power-up bookkeeping on player-attack rounds
+    let fire = false, rage = false;
+    if (playerIsAtk) {
+      fire = F.fireArmed;
+      if (fire) F.fireArmed = false;
+      rage = F.pu.rage > 0;
+      if (rage) { F.pu.rage--; if (!F.pu.rage && Scene) Scene.setRage(false); }
+      renderPowerups();
+    }
+
+    // Record "damage" flavour numbers for duel-style result copy
+    const grade = attackerWins ? atk.zone : def.zone;
+    const basePow = playerIsAtk ? playerPower() : F.kol.power;
+    const dmg = Math.round(basePow * Math.max(0.25, grade.mult) * (fire ? SAK.POWERUPS.fist.mult : 1) * (rage ? SAK.POWERUPS.rage.damageMult : 1));
+    if (attackerWins) {
+      if (playerIsAtk) { F.duel.p = dmg; F.hits++; F.maxHit = Math.max(F.maxHit, dmg); if (grade.id === 'perfect') F.perfects++; }
+      else { F.duel.k = dmg; }
+    } else {
+      // defender won — record a small "brace" value
+      if (playerIsAtk) F.duel.k = Math.round(dmg * 0.6);
+      else { F.duel.p = Math.round(dmg * 0.6); F.hits++; }
+    }
+
+    // Scoreboard
+    if (playerWonRound) C.pWins++; else C.kWins++;
+    renderRoundScore();
+
+    const winnerName = playerWonRound
+      ? (F.localPvp ? 'P1' : 'YOU')
+      : (F.localPvp ? 'P2' : F.kol.name);
+    const margin = Math.abs(atkDist - defDist).toFixed(1);
+    banner(
+      playerWonRound ? `${winnerName} TAKES IT` : `${winnerName} TAKES IT`,
+      playerWonRound ? '#39ff88' : '#ff3b5c',
+      900
+    );
+    {
+      const app = appRect();
+      floatText(app.width / 2, 200,
+        `ATK ${atkDist.toFixed(0)}° · BRACE ${defDist.toFixed(0)}°${atkDist === defDist ? ' · TIE→ATK' : ` · Δ${margin}°`}`,
+        playerWonRound ? 'good' : 'miss');
+    }
+
+    // Play slap animation for the round attacker (landed or stuffed)
+    const slapWho = C.attacker === 'player' ? 'player' : 'kol';
+    const slapGrade = attackerWins ? (grade.id === 'miss' ? 'weak' : grade.id) : 'weak';
+    const doImpact = () => {
+      if (attackerWins) {
+        A.slap(grade.mult * (fire ? 1.4 : 1));
+        haptic(grade.id === 'perfect' || fire ? 60 : 30);
+        if (fire) flash('#ffb000'); else if (grade.id === 'perfect') flash('#39ff88');
+        else flash('#ffe23d');
+        if (grade.id === 'perfect' && Scene) Scene.laserEyes(slapWho, 1.0);
+        const target = slapWho === 'player' ? 'k' : 'p';
+        const pk = $(`#${target}-portrait`);
+        pk.classList.remove('hit'); void pk.offsetWidth; pk.classList.add('hit');
+        if (target === 'k') pk.innerHTML = SAK.avatarSVG(F.kol.look, { blush: true });
+        else pk.innerHTML = SAK.avatarSVG(playerLook(), { blush: true });
+        if (playerIsAtk && grade.id === 'perfect' && Math.random() < 0.5) sayPlayer(profile().phrase);
+        else if (!playerIsAtk && Math.random() < 0.35) say(pick(F.kol.taunts));
+      } else {
+        A.brace();
+        haptic(25);
+        flash('#2ee66b');
+        say(playerWonRound ? 'BRACED TO THE MOON 🛡' : 'STUFFED. NGMI swing.');
+      }
+    };
+
+    if (Scene) await Scene.slap(slapWho, { grade: slapGrade, fire: fire && attackerWins && playerIsAtk, windup: 0.28, onImpact: doImpact });
+    else { await wait(0.35); doImpact(); }
+
+    await wait(0.35);
+
+    if (C.pWins >= C.winsNeeded) return knockout('kol');
+    if (C.kWins >= C.winsNeeded) return knockout('player');
+
+    await wait(0.25);
+    startChallengeRound();
+  }
+
+  /* --- power-up rage mid-round meter bump --------------------------------- */
+  // (usePowerup still references Meter — patched below to MeterAtk)
+
+  /* --- legacy stubs (brace ring retired) ---------------------------------- */
+  function tryBrace() { /* dual-meter replaced brace ring */ }
 
   /* --- knockout & results ------------------------------------------------- */
   async function knockout(loser) {
     F.turn = 'over';
-    SAK.Meter.stop();
+    stopMeters();
     $('#prompt').classList.add('hidden');
     $('#brace').classList.add('hidden');
     A.ko(); haptic([60, 40, 120]);
@@ -684,7 +833,7 @@
     if (win) {
       const base = k.winPts * modeMult;
       const streakPts = base * PR.streakPct * Math.min(streakBefore, PR.streakCap);
-      rows.push([F.mode === 'duel' ? 'Duel win (½ pts, ⚡ fast)' : 'Knockout reward', base], [`Based slaps (${F.perfects}★)`, F.perfects * PR.perPerfect]);
+      rows.push([F.mode === 'duel' ? 'Bo3 duel win (½ pts)' : 'Bo5 classic win', base], [`Based slaps (${F.perfects}★)`, F.perfects * PR.perPerfect]);
       if (streakPts) rows.push([`Win streak (${streakBefore}🔥)`, streakPts]);
       pts = base + F.perfects * PR.perPerfect + streakPts;
     } else if (draw) {
@@ -736,10 +885,10 @@
       : win
       ? `<div class="result-title">${pick(C.winTitles)}</div>
          ${SAK.avatarSVG(k.look, { ko: true, blush: true })}
-         <div class="result-sub">${sub(pick(C.winSubs))}${F.mode === 'duel' ? ` (${F.duel.p} vs ${F.duel.k})` : ''}</div>`
+         <div class="result-sub">${sub(pick(C.winSubs))}${F.challenge ? ` · ${F.challenge.pWins}–${F.challenge.kWins} (Bo${F.challenge.bestOf})` : ''}</div>`
       : `<div class="result-title">${pick(C.loseTitles)}</div>
          ${SAK.avatarSVG(playerLook(), { ko: true, blush: true })}
-         <div class="result-sub">${sub(pick(C.loseSubs))}${F.mode === 'duel' ? ` (${F.duel.p} vs ${F.duel.k})` : ''}<br><small>Tip: upgrade ❤ / ✊ or pop a power-up (🔥 ⛑ 😤)</small></div>`;
+         <div class="result-sub">${sub(pick(C.loseSubs))}${F.challenge ? ` · ${F.challenge.pWins}–${F.challenge.kWins} (Bo${F.challenge.bestOf})` : ''}<br><small>Tip: ride the jerky attack meter into the ★ — closer wins the round</small></div>`;
     html += `<div class="breakdown">
         <div class="bd-head">PLAY-TO-EARN</div>
         ${rows.map(([l, v]) => `<div><span>${l}</span><b>+${fmt(v)}</b></div>`).join('')}
@@ -768,7 +917,7 @@
     card.className = 'result-card ' + (win ? 'win' : 'lose');
     card.innerHTML = html;
     show('result');
-    $('#r-rematch').onclick = () => startFight(k, reBet, { mode: F.mode });
+    $('#r-rematch').onclick = () => startFight(k, reBet, { mode: F.mode, localPvp: F.localPvp, pvp: F.opts && F.opts.pvp });
     if ($('#r-next')) $('#r-next').onclick = () => { selectedBet = 0; openPicker(idx + 1); };
     $('#r-pick').onclick = () => { if (k.pvp) { show('menu'); menuScene(); openPvp(); } else openPicker(); };
     $('#r-menu').onclick = () => { show('menu'); menuScene(); };
@@ -910,20 +1059,76 @@
     $('#pvp-lobby').classList.remove('hidden'); $('#pvp-search').classList.add('hidden');
   });
 
-  /* --- input: tap anywhere on the fight screen --------------------------- */
+  function localP2Opponent() {
+    const P2 = SAK.UGC.palettes;
+    const pickC = a => a[Math.floor(Math.random() * a.length)];
+    const name = 'P2_DEGEN';
+    return Object.assign({
+      id: 'local_p2', name, handle: '@p2_hotseat', level: 'PVP', pvp: true, localPvp: true,
+      tagline: 'Same-device rival. Split meters. No mercy.',
+      look: { skin: pickC(P2.skin), shirt: pickC(P2.shirt), hair: pickC(P2.hair), pants: '#2a2a40', accessory: 'shades', accent: '#ff1a1a' },
+      taunts: ['pass the phone, ser', 'my brace is diamond hands', 'ratio + braced', 'touch grass after this L']
+    }, SAK.customKolStats(3));
+  }
+
+  $('#pvp-local').addEventListener('click', () => {
+    A.click();
+    $('#modal-pvp').classList.add('hidden');
+    startFight(localP2Opponent(), pvpWager, { mode: pvpMode, localPvp: true, pvp: true });
+  });
+
+  /* --- input: dual-meter challenge locks --------------------------------- */
+  function sideFromEvent(e) {
+    if (!e) return null;
+    const t = e.target;
+    if (t && t.closest) {
+      if (t.closest('#panel-atk')) return 'atk';
+      if (t.closest('#panel-def')) return 'def';
+    }
+    if (e.clientX != null) {
+      const r = $('#screen-fight').getBoundingClientRect();
+      return (e.clientX - r.left) < r.width / 2 ? 'atk' : 'def';
+    }
+    return null;
+  }
+
   function onTap(e) {
     if (screen !== 'fight' || !F) return;
-    if (e && e.target && e.target.closest && e.target.closest('button, .modal')) return;
+    if (e && e.target && e.target.closest && e.target.closest('button, .modal, .pu-rail, .upgrade-bar')) return;
     if (!$('#modal-settings').classList.contains('hidden')) return;
+    if (F.turn !== 'challenge') return;
     A.unlock();
-    if (F.turn === 'player') playerSlap();
-    else if (F.turn === 'kol-windup') tryBrace();
+    let side = sideFromEvent(e);
+    if (!F.localPvp) {
+      if (playerControls('atk') && !playerControls('def')) side = 'atk';
+      else if (playerControls('def') && !playerControls('atk')) side = 'def';
+    }
+    if (!side) return;
+    if (!playerControls(side)) {
+      toast("That's their meter 👀");
+      return;
+    }
+    lockSide(side, false);
   }
   $('#screen-fight').addEventListener('pointerdown', onTap);
   window.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
-    if ((e.code === 'Space' || e.code === 'Enter') && screen === 'fight') { e.preventDefault(); onTap(null); }
-    if (screen === 'fight' && { KeyF: 1, KeyH: 1, KeyR: 1 }[e.code]) usePowerup({ KeyF: 'fist', KeyH: 'helmet', KeyR: 'rage' }[e.code]);
+    if (screen !== 'fight' || !F) return;
+    if (F.turn === 'challenge') {
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') { e.preventDefault(); if (playerControls('atk')) lockSide('atk', false); return; }
+      if (e.code === 'KeyL' || e.code === 'ArrowRight') { e.preventDefault(); if (playerControls('def')) lockSide('def', false); return; }
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (!F.localPvp) {
+          if (playerControls('atk')) lockSide('atk', false);
+          else if (playerControls('def')) lockSide('def', false);
+        } else {
+          toast('Hotseat: A / left = ATTACK · L / right = BRACE');
+        }
+        return;
+      }
+    }
+    if ({ KeyF: 1, KeyH: 1, KeyR: 1 }[e.code]) usePowerup({ KeyF: 'fist', KeyH: 'helmet', KeyR: 'rage' }[e.code]);
   });
 
   /* ============================================================== SETTINGS */
@@ -940,7 +1145,7 @@
   $('#set-haptics').addEventListener('change', e => { S.settings.haptics = e.target.checked; SAK.Storage.save(); });
   $('#btn-forfeit').addEventListener('click', () => {
     $('#modal-settings').classList.add('hidden');
-    if (F && !['over', 'done', 'busy'].includes(F.turn)) { F.pHp = 0; renderHp(); knockout('player'); }
+    if (F && !['over', 'done', 'busy'].includes(F.turn)) { stopMeters(); F.challenge.kWins = F.challenge.winsNeeded; renderRoundScore(); knockout('player'); }
   });
   $('#btn-disconnect').addEventListener('click', () => {
     W.disconnect(); $('#modal-settings').classList.add('hidden'); toast('Wallet disconnected'); renderMenu();
@@ -981,7 +1186,9 @@
       setTimeout(() => toast(`🎁 Welcome! +${fmt(SAK.POINTS.welcomeBonus)} PTS to get slapping`, 2600), 600);
     }
     lastSlots = ugcSlotsUnlocked();
-    SAK.Meter.build($('#meter'));
+    MeterAtk = SAK.createMeter($('#meter-atk'), { jerky: true, label: '' });
+    MeterDef = SAK.createMeter($('#meter-def'), { jerky: false, label: '' });
+    SAK.Meter.build($('#meter')); // legacy hidden mount
     buildTicker();
     try {
       if (!window.THREE) throw new Error('three.js failed to load');

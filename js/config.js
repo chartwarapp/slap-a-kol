@@ -100,12 +100,26 @@ SAK.METER = {
  * On loss the bet (escrowed when the fight starts) is forfeited. */
 SAK.REWARDS = { perfectBonus: 0.05, perfectBonusCap: 5, streakBonus: 0.05, streakBonusCap: 5 };
 
-/* ---- Match modes --------------------------------------------------------
- * classic : alternate slaps until someone hits 0 HP.
- * duel    : one slap each, biggest slap wins (draw = bet refunded).     */
+/* ---- Match modes (dual-meter challenge) ---------------------------------
+ * classic : best of 5 round challenges (first to 3).
+ * duel    : best of 3 round challenges (first to 2).
+ * Each round: attacker + defender meters lock at the same time; closer to
+ * the green centre wins the exchange.                                     */
 SAK.MODES = {
-  classic: { id: 'classic', label: 'CLASSIC KO', icon: '🥊', desc: 'Trade slaps till someone gets REKT', ptsMult: 1 },
-  duel:    { id: 'duel',    label: 'QUICK DUEL', icon: '⚡', desc: 'One slap each. Biggest slap wins.', ptsMult: 0.5 }
+  classic: { id: 'classic', label: 'CLASSIC KO', icon: '🥊', desc: 'Best of 5 · closer to green wins each round', ptsMult: 1, bestOf: 5 },
+  duel:    { id: 'duel',    label: 'QUICK DUEL', icon: '⚡', desc: 'Best of 3 · closer to green wins each round', ptsMult: 0.5, bestOf: 3 }
+};
+
+/* Dual-meter challenge tuning. Tie-break: attacker wins when equally close. */
+SAK.CHALLENGE = {
+  tieBreak: 'attacker',          // equal dist → attacker takes the round
+  defenderSpeed: 145,            // deg/s (smooth brace meter)
+  attackerBaseSpeed: 170,        // seed speed before jerky jumps
+  jerkyMin: 70,
+  jerkyMax: 340,
+  jerkyInterval: [0.10, 0.38],   // seconds between speed/dir jerks
+  aiLockDelay: [0.55, 1.35],     // AI thinks then locks
+  windowMs: 4500                 // soft timeout before auto-resolve nudge
 };
 
 /* Degen copy pools (English only; loud meme energy, still readable). */
@@ -117,8 +131,8 @@ SAK.COPY = {
   missTaunts: ['NGMI with that aim 😜', 'Paper-handed swing, ser.', 'Was that a slap or a gm?', 'Skill issue. 📉']
 };
 
-/* Brace mechanic: while the KOL winds up, tapping inside the window right
- * before impact halves the damage you take. */
+/* Legacy brace ring (kept for reference). Dual-meter challenge replaced it:
+ * defender locks their own meter; closer-to-centre decides the round. */
 SAK.BRACE = { window: 0.28, damageMult: 0.5 };
 
 /* ---- KOL roster lives in js/roster.js (easy to edit) ---------------- */

@@ -1,0 +1,13 @@
+{
+  "name": "slap-a-kol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Slap-a-KOL \u2014 hyper-casual degen slap-fighting browser game prototype (static, no build step).",
+  "scripts": {
+    "start": "npx --yes serve -l 5173 .",
+    "dev": "npx --yes serve -l 5173 .",
+    "lan": "python3 -m http.server 5173 --bind 0.0.0.0",
+    "zip": "mkdir -p dist && python3 -c \"import zipfile,os;z=zipfile.ZipFile('dist/slap-a-kol.zip','w',zipfile.ZIP_DEFLATED);[z.write(os.path.join(r,f),'slap-a-kol/'+os.path.join(r,f)) for d in ['css','js','vendor','assets'] for r,_,fs in os.walk(d) for f in fs];[z.write(f,'slap-a-kol/'+f) for f in ['index.html','README.md']];z.close()\""
+  },
+  "license": "UNLICENSED"
+}
