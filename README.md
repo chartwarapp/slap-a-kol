@@ -27,9 +27,10 @@ Controls: **tap / click** (or **Space / Enter / A / L**) to lock **your** meter.
 3. **Private meter (per device)**: you only see **your** needle this round.
    - Role label: **🥊 ATTACK** or **🛡 BRACE** (roles alternate each round).
    - Both roles use the **jerky / unpredictable** needle — same green ★ fairness.
-   - Opponent locks **privately** (you never see their needle until the round resolves).
-4. **Closer to the centre of the green zone wins the round**. Equal distance → **attacker wins** (tie-break).
-5. Match ends when someone hits the wins-needed score. KO fly-off + PTS result screen.
+   - Opponent locks **privately** (you never see their needle while you play).
+4. **After both lock**: a **LOCK REVEAL** popup shows YOU vs THEM needle marks vs the green ★ centre (how close they were).
+5. **Closer to the centre of the green zone wins the round**. Equal distance → **attacker wins** (tie-break).
+6. Match ends when someone hits the wins-needed score. KO fly-off + PTS result screen.
 
 ### Modes
 - **⚡ Quick Duel**: **best of 3** (first to 2). Pays ½ PTS.
@@ -95,7 +96,7 @@ js/game.js          game controller / private-meter challenge state machine / UI
 - Each device shows only the local player's meter (ATTACK or BRACE).
 - Shared green-centre fairness: same zone geometry for both roles.
 - Both roles: random jerky speed / direction changes (`SAK.CHALLENGE` in `config.js`).
-- Opponent lock is private until resolve — then distances / winner are shown.
+- Opponent lock is private until both lock — then LOCK REVEAL compares YOU vs THEM needle marks vs green ★.
 - Score each exchange by `|needleAngle|` distance from centre — **closer wins**.
 - **Tie-break: attacker wins** when distances are equal.
 - Quick Duel = Bo3 · Classic = Bo5.

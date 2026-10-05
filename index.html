@@ -263,6 +263,35 @@
     </div>
   </div>
 
+  <!-- Post-lock compare: opponent needle revealed only after BOTH locked -->
+  <div id="lock-reveal" class="lock-reveal hidden" aria-live="polite">
+    <div class="lock-reveal-card">
+      <div class="lr-title">🔓 LOCK REVEAL</div>
+      <div class="lr-sub" id="lr-sub">Closer to ★ green wins</div>
+      <div class="lr-compare">
+        <div class="lr-side you" id="lr-you">
+          <div class="lr-who">YOU</div>
+          <div class="lr-role" id="lr-you-role">🥊 ATTACK</div>
+          <div class="lr-meter" id="lr-meter-you"></div>
+          <div class="lr-dist" id="lr-you-dist">—°</div>
+          <div class="lr-zone" id="lr-you-zone">—</div>
+          <div class="lr-badge hidden" id="lr-you-badge">★ CLOSER</div>
+        </div>
+        <div class="lr-vs">VS</div>
+        <div class="lr-side them" id="lr-them">
+          <div class="lr-who" id="lr-them-who">THEM</div>
+          <div class="lr-role" id="lr-them-role">🛡 BRACE</div>
+          <div class="lr-meter" id="lr-meter-them"></div>
+          <div class="lr-dist" id="lr-them-dist">—°</div>
+          <div class="lr-zone" id="lr-them-zone">—</div>
+          <div class="lr-badge hidden" id="lr-them-badge">★ CLOSER</div>
+        </div>
+      </div>
+      <div class="lr-margin" id="lr-margin"></div>
+      <div class="lr-hint">Tap to continue</div>
+    </div>
+  </div>
+
   <div id="fx-layer"></div>
   <div id="banner" class="banner hidden"></div>
   <div id="toast" class="toast hidden"></div>

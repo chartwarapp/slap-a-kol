@@ -27,7 +27,9 @@
   const W = SAK.Wallet, A = SAK.Audio, P = SAK.Points, V = SAK.Vault;
   let Scene = null;                  // SAK.Scene3D once WebGL is up
   let MeterLocal = null;                 // private per-device meter (local player only)
+  let MeterRevealYou = null, MeterRevealThem = null; // post-lock compare dials
   let aiLockTimer = 0, roundTimer = 0;
+  let revealDismiss = null;              // resolve() for tap-to-continue on lock reveal
 
   /* ----------------------------------------------------------- derived stats */
   const playerMaxHp = () => SAK.PLAYER.baseHp + S.upgrades.health * SAK.PLAYER.hpPerLevel;
@@ -560,6 +562,7 @@
     clearTimeout(aiLockTimer);
     clearTimeout(roundTimer);
     if (MeterLocal) MeterLocal.stop();
+    // leave reveal visible during resolve; hideLockReveal called on next round / KO
   }
 
   function makeLockResult(angle) {
@@ -582,6 +585,7 @@
 
   function startChallengeRound() {
     if (!F || ['over', 'done'].includes(F.turn)) return;
+    hideLockReveal();
     const C = F.challenge;
     C.round++;
     C.locks = { atk: null, def: null };
@@ -719,6 +723,99 @@
     }
   }
 
+
+  function hideLockReveal() {
+    const el = $('#lock-reveal');
+    if (el) el.classList.add('hidden');
+    if (revealDismiss) {
+      const r = revealDismiss;
+      revealDismiss = null;
+      try { r(); } catch (_) {}
+    }
+  }
+
+  /** Pop-up after BOTH sides locked: show YOU vs THEM needle marks vs green ★. */
+  function showLockReveal(playerWonRound) {
+    return new Promise(resolve => {
+      const C = F && F.challenge;
+      if (!C || !C.locks.atk || !C.locks.def) { resolve(); return; }
+      const el = $('#lock-reveal');
+      if (!el) { resolve(); return; }
+
+      const localIsAtk = C.localSide === 'atk';
+      const youLock = C.locks[C.localSide];
+      const themLock = C.locks[localIsAtk ? 'def' : 'atk'];
+      const youRoleAtk = localIsAtk;
+      const themRoleAtk = !localIsAtk;
+
+      $('#lr-sub').textContent = playerWonRound
+        ? `Round ${C.round} · YOU take it`
+        : `Round ${C.round} · ${F.kol.name} takes it`;
+
+      $('#lr-you-role').textContent = youRoleAtk ? '🥊 ATTACK' : '🛡 BRACE';
+      $('#lr-you-role').className = 'lr-role ' + (youRoleAtk ? 'atk' : 'def');
+      $('#lr-them-who').textContent = (F.kol.name || 'THEM').slice(0, 12);
+      $('#lr-them-role').textContent = themRoleAtk ? '🥊 ATTACK' : '🛡 BRACE';
+      $('#lr-them-role').className = 'lr-role ' + (themRoleAtk ? 'atk' : 'def');
+
+      const fmtDist = lock => {
+        const d = lock.dist;
+        const side = lock.angle < 0 ? 'L' : (lock.angle > 0 ? 'R' : '★');
+        return `${d.toFixed(0)}<span class="lr-deg">°${side === '★' ? '' : ' ' + side}</span>`;
+      };
+      $('#lr-you-dist').innerHTML = fmtDist(youLock);
+      $('#lr-them-dist').innerHTML = fmtDist(themLock);
+      $('#lr-you-zone').textContent = (youLock.zone && (youLock.zone.label || youLock.zone.id)) || '—';
+      $('#lr-you-zone').style.color = (youLock.zone && youLock.zone.color) || '#fff';
+      $('#lr-them-zone').textContent = (themLock.zone && (themLock.zone.label || themLock.zone.id)) || '—';
+      $('#lr-them-zone').style.color = (themLock.zone && themLock.zone.color) || '#fff';
+
+      const youCloser = youLock.dist < themLock.dist
+        || (youLock.dist === themLock.dist && ((SAK.CHALLENGE.tieBreak !== 'defender') ? youRoleAtk : !youRoleAtk));
+      $('#lr-you').classList.toggle('winner', youCloser);
+      $('#lr-you').classList.toggle('loser', !youCloser);
+      $('#lr-them').classList.toggle('winner', !youCloser);
+      $('#lr-them').classList.toggle('loser', youCloser);
+      $('#lr-you-badge').classList.toggle('hidden', !youCloser);
+      $('#lr-them-badge').classList.toggle('hidden', youCloser);
+
+      const delta = Math.abs(youLock.dist - themLock.dist);
+      const tie = youLock.dist === themLock.dist;
+      $('#lr-margin').textContent = tie
+        ? `TIE ${youLock.dist.toFixed(0)}° · ${(SAK.CHALLENGE.tieBreak !== 'defender') ? 'attacker edge' : 'defender edge'}`
+        : `Δ ${delta.toFixed(1)}° from ★ green · ${youCloser ? 'you closer' : 'them closer'}`;
+
+      // Freeze needles on reveal dials (built once, reused)
+      if (!MeterRevealYou) MeterRevealYou = SAK.createMeter($('#lr-meter-you'), { jerky: false, label: '' });
+      if (!MeterRevealThem) MeterRevealThem = SAK.createMeter($('#lr-meter-them'), { jerky: false, label: '' });
+      MeterRevealYou.stop();
+      MeterRevealThem.stop();
+      MeterRevealYou.forceLock(youLock.angle);
+      MeterRevealThem.forceLock(themLock.angle);
+
+      el.classList.remove('hidden');
+      A.click();
+      haptic(12);
+
+      // Tap / auto-continue
+      if (revealDismiss) { try { revealDismiss(); } catch (_) {} }
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        revealDismiss = null;
+        el.removeEventListener('click', onTap);
+        el.classList.add('hidden');
+        resolve();
+      };
+      revealDismiss = finish;
+      const onTap = e => { e.preventDefault(); finish(); };
+      el.addEventListener('click', onTap);
+      // Auto-advance so the fight keeps momentum
+      setTimeout(finish, 2200);
+    });
+  }
+
   async function resolveChallengeRound() {
     if (!F || F.challenge.resolving) return;
     F.challenge.resolving = true;
@@ -766,6 +863,9 @@
     // Scoreboard
     if (playerWonRound) C.pWins++; else C.kWins++;
     renderRoundScore();
+
+    // Reveal WHERE they locked (private until both locked) — YOU vs THEM needles
+    await showLockReveal(playerWonRound);
 
     const winnerName = playerWonRound ? 'YOU' : F.kol.name;
     const margin = Math.abs(atkDist - defDist).toFixed(1);
@@ -827,6 +927,7 @@
   async function knockout(loser) {
     F.turn = 'over';
     stopMeters();
+    hideLockReveal();
     $('#prompt').classList.add('hidden');
     $('#brace').classList.add('hidden');
     A.ko(); haptic([60, 40, 120]);
@@ -1092,6 +1193,12 @@
   window.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
     if (screen !== 'fight' || !F) return;
+    // Space/Enter dismisses lock reveal when shown
+    if (revealDismiss && (e.code === 'Space' || e.code === 'Enter')) {
+      e.preventDefault();
+      revealDismiss();
+      return;
+    }
     if (F.turn === 'challenge') {
       if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyA' || e.code === 'KeyL'
           || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
