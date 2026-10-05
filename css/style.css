@@ -24,8 +24,9 @@ body {
 button { font-family: inherit; cursor: pointer; border: 0; color: inherit; }
 .hidden { display: none !important; }
 
-/* text outline used everywhere for the cartoon look */
-h2, h3, .prompt, .vs, .level, .fc-name, .btn, .banner, .float-text, .upg-title, .result-title, .coin-pill {
+/* text outline used everywhere for the cartoon look (buttons excluded — heavy multi-offset
+   stroke turns STAKE / CLAIM labels into unreadable blobs at button sizes) */
+h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .upg-title, .result-title, .coin-pill {
   text-shadow: 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink), 2px 2px 0 var(--ink), -2px 2px 0 var(--ink);
 }
 
@@ -77,6 +78,8 @@ h2, h3, .prompt, .vs, .level, .fc-name, .btn, .banner, .float-text, .upg-title, 
 .btn {
   display: block; width: 100%; padding: 14px 18px; border-radius: 16px; font-size: 20px; letter-spacing: .5px;
   border: 3px solid var(--ink); box-shadow: 0 6px 0 var(--ink); transition: transform .06s;
+  /* sharp labels like CLOSE: ink fill + light highlight, no heavy stroke */
+  color: var(--ink); text-shadow: 0 1px 0 rgba(255, 255, 255, .55);
 }
 .btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
 .btn:disabled { filter: grayscale(.8) brightness(.85); cursor: not-allowed; }
@@ -85,7 +88,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .btn, .banner, .float-text, .upg-title, 
 .btn-red    { background: linear-gradient(#ff6b85, var(--red)); }
 .btn-green  { background: linear-gradient(#6bffa0, var(--green)); }
 .btn-purple { background: linear-gradient(#ab7dff, var(--purple)); }
-.btn-grey   { background: var(--grey); color: var(--ink); text-shadow: none; font-size: 17px; }
+.btn-grey   { background: var(--grey); text-shadow: none; font-size: 17px; }
 .pulse { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.06); } }
 
