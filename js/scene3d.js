@@ -6,7 +6,7 @@
  *   - PLAYER stands at z=+0.8 facing -z (back three-quarters to camera)
  *   - KOL    stands at z=-0.8 facing +z (face towards camera)
  *   - camera sits front-right so both faces/slapping arms read clearly
- * Public API (SAK.Scene3D): init, setPlayer, setOpponent, resetFight,
+ * Public API (SAK.Scene3D): init, setPlayer, applyAvatar, createPreview, setOpponent, resetFight,
  *   setRoleCam, slap, knockout, setFireArmed, setBrace, screenPos, setMode
  * Camera: default fight view while the local player ATTACKS; orbit onto the
  *   local player's face while they BRACE; every slap swings onto the struck
@@ -161,6 +161,16 @@ SAK.Scene3D = (function () {
 
 
 
+  /* Body presets (avatar.body). w/d = torso width/depth, h = torso height,
+   * sh = shoulder x, arm = arm thickness, head = head scale, taper = top/bottom radius ratio. */
+  const BODY = {
+    classic: { w: 1,    d: 1,    h: 1,    sh: 0.55, arm: 1,    head: 1,    taper: 1 },
+    chonk:   { w: 1.28, d: 1.3,  h: 0.96, sh: 0.66, arm: 1.18, head: 1,    taper: 0.92, belly: true },
+    gymbro:  { w: 1.2,  d: 1.05, h: 1.04, sh: 0.7,  arm: 1.4,  head: 0.92, taper: 1.3 },
+    noodle:  { w: 0.78, d: 0.85, h: 1.12, sh: 0.45, arm: 0.78, head: 1.04, taper: 1 },
+    smol:    { w: 0.95, d: 1,    h: 0.8,  sh: 0.52, arm: 0.95, head: 1.2,  taper: 1 }
+  };
+
   /* ================================================================ Fighter */
   class Fighter {
     /**
@@ -187,6 +197,8 @@ SAK.Scene3D = (function () {
     build() {
       const L = this.look;
       const skin = mat(L.skin), shirt = mat(L.shirt), pants = mat(L.pants), hair = mat(L.hair);
+      const B = BODY[L.body] || BODY.classic;
+      this.body = B;
 
       // legs
       for (const sx of [-0.22, 0.22]) {
@@ -195,30 +207,37 @@ SAK.Scene3D = (function () {
       }
       // torso pivot at hips
       this.torso = new T.Group(); this.torso.position.y = 0.95; this.root.add(this.torso);
-      const body = mesh(new T.CylinderGeometry(0.5, 0.42, 0.88, 7), shirt, 0, 0.44, 0);
-      body.scale.z = 0.68; this.torso.add(body);
-      this.torso.add(mesh(new T.BoxGeometry(0.86, 0.1, 0.42), pants, 0, 0.03, 0)); // belt
-      this.torso.add(mesh(new T.CylinderGeometry(0.14, 0.16, 0.18, 6), skin, 0, 0.92, 0)); // neck
+      const body = mesh(new T.CylinderGeometry(0.5 * B.w * Math.min(1.25, B.taper), 0.42 * B.w / Math.max(1, B.taper * 0.85), 0.88 * B.h, 7), shirt, 0, 0.44 * B.h, 0);
+      body.scale.z = 0.68 * B.d; this.torso.add(body);
+      if (B.belly) { const belly = mesh(new T.IcosahedronGeometry(0.42, 1), shirt, 0, 0.3, 0.28); belly.scale.set(1.15, 0.9, 0.85); this.torso.add(belly); }
+      this.torso.add(mesh(new T.BoxGeometry(0.86 * Math.max(B.w / Math.max(1, B.taper * 0.85), 0.8), 0.1, 0.42 * B.d), pants, 0, 0.03, 0)); // belt
+      this.torso.add(mesh(new T.CylinderGeometry(0.14, 0.16, 0.18, 6), skin, 0, 0.92 * B.h, 0)); // neck
 
       // head
-      this.head = new T.Group(); this.head.position.y = 0.98; this.torso.add(this.head);
+      this.head = new T.Group(); this.head.position.y = 0.98 * B.h; this.head.scale.setScalar(B.head); this.torso.add(this.head);
       const skull = mesh(new T.IcosahedronGeometry(0.5, 1), skin, 0, 0.42, 0);
       skull.scale.set(1, 1.06, 0.98); this.head.add(skull);
       this.skull = skull;
       this.skullBase = new T.Vector3(1, 1.06, 0.98);
       this.hitFX = null; // { until, dur, sx, sy, sz, stars }
-      // hair cap (top + back), forehead stays visible
-      const hairCap = mesh(new T.SphereGeometry(0.535, 9, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), hair, 0, 0.47, -0.04);
-      hairCap.rotation.x = -0.35; this.head.add(hairCap);
+      this.buildHair(hair);
       // ears
       for (const sx of [-1, 1]) this.head.add(mesh(new T.IcosahedronGeometry(0.1, 0), skin, sx * 0.5, 0.4, 0));
       // eyes
       this.eyes = new T.Group(); this.head.add(this.eyes);
+      const eyeStyle = L.eyes || 'round', pupil = mat(L.eyeColor || '#1a1a1a');
       for (const sx of [-1, 1]) {
-        this.eyes.add(mesh(new T.SphereGeometry(0.1, 8, 6), mat('#ffffff'), sx * 0.18, 0.5, 0.42));
-        this.eyes.add(mesh(new T.SphereGeometry(0.055, 6, 5), mat('#1a1a1a'), sx * 0.18, 0.5, 0.51));
-        const brow = mesh(new T.BoxGeometry(0.2, 0.05, 0.06), hair, sx * 0.19, 0.65, 0.45);
-        brow.rotation.z = sx * -0.18; this.head.add(brow);
+        if (eyeStyle === 'dot') {
+          this.eyes.add(mesh(new T.SphereGeometry(0.07, 7, 5), pupil, sx * 0.18, 0.5, 0.46));
+        } else {
+          const big = eyeStyle === 'big';
+          this.eyes.add(mesh(new T.SphereGeometry(big ? 0.13 : 0.1, 8, 6), mat('#ffffff'), sx * 0.18, 0.5, big ? 0.41 : 0.42));
+          this.eyes.add(mesh(new T.SphereGeometry(big ? 0.068 : eyeStyle === 'angry' ? 0.045 : 0.055, 6, 5), pupil, sx * 0.18, 0.5, big ? 0.535 : 0.51));
+          if (eyeStyle === 'sleepy') this.eyes.add(mesh(new T.BoxGeometry(0.25, 0.11, 0.1), skin, sx * 0.18, 0.565, 0.49)); // heavy lids
+        }
+        const angry = eyeStyle === 'angry';
+        const brow = mesh(new T.BoxGeometry(0.2, 0.05, 0.06), hair, sx * 0.19, angry ? 0.62 : 0.65, 0.45);
+        brow.rotation.z = sx * (angry ? 0.42 : -0.18); this.head.add(brow);
       }
       // KO "X" eyes (hidden until knocked out)
       this.xEyes = new T.Group(); this.xEyes.visible = false; this.head.add(this.xEyes);
@@ -260,11 +279,11 @@ SAK.Scene3D = (function () {
       // arms
       this.arms = {};
       for (const side of [-1, 1]) {
-        const shoulder = new T.Group(); shoulder.position.set(side * 0.55, 0.78, 0); this.torso.add(shoulder);
-        shoulder.add(mesh(new T.IcosahedronGeometry(0.16, 0), shirt, 0, 0, 0));
-        shoulder.add(mesh(new T.CylinderGeometry(0.13, 0.11, 0.55, 6), shirt, 0, -0.27, 0));
+        const shoulder = new T.Group(); shoulder.position.set(side * B.sh, 0.78 * B.h, 0); this.torso.add(shoulder);
+        shoulder.add(mesh(new T.IcosahedronGeometry(0.16 * B.arm, 0), shirt, 0, 0, 0));
+        shoulder.add(mesh(new T.CylinderGeometry(0.13 * B.arm, 0.11 * B.arm, 0.55, 6), shirt, 0, -0.27, 0));
         const elbow = new T.Group(); elbow.position.y = -0.55; shoulder.add(elbow);
-        elbow.add(mesh(new T.CylinderGeometry(0.105, 0.09, 0.45, 6), skin, 0, -0.22, 0));
+        elbow.add(mesh(new T.CylinderGeometry(0.105 * B.arm, 0.09 * B.arm, 0.45, 6), skin, 0, -0.22, 0));
         const handMat = mat(L.skin, {}); // own material so it can turn golden
         const hand = mesh(new T.IcosahedronGeometry(0.16, 1), handMat, 0, -0.52, 0);
         hand.scale.set(0.75, 1.1, 1.15);
@@ -272,6 +291,56 @@ SAK.Scene3D = (function () {
         this.arms[side] = { shoulder, elbow, hand, handMat, side };
       }
       this.root.traverse(o => { o.userData.fighter = this; });
+    }
+
+    /** Hair style (avatar.hairStyle); KOLs without one keep the classic cap. */
+    buildHair(hair) {
+      const H = this.head, add = (geo, x, y, z, fn) => { const m = mesh(geo, hair, x, y, z); if (fn) fn(m); H.add(m); return m; };
+      const cap = (r, arc) => add(new T.SphereGeometry(r, 9, 6, 0, Math.PI * 2, 0, Math.PI * arc), 0, 0.47, -0.04, m => { m.rotation.x = -0.35; });
+      let style = this.look.hairStyle || 'short';
+      // tall styles get squashed under a hat (no clipping through cap/beanie/top hat)
+      if (['cap', 'beanie', 'tophat'].includes(this.look.accessory) && ['spiky', 'mohawk', 'afro', 'bun'].includes(style)) style = 'short';
+      switch (style) {
+        case 'bald': break;
+        case 'buzz': cap(0.515, 0.42); break;
+        case 'spiky':
+          cap(0.53, 0.46);
+          for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2;
+            add(new T.ConeGeometry(0.11, 0.32, 4), Math.sin(a) * 0.26, 0.93 + (i % 2) * 0.04, Math.cos(a) * 0.26 - 0.06, m => { m.rotation.set(Math.cos(a) * 0.55, 0, -Math.sin(a) * 0.55); });
+          }
+          add(new T.ConeGeometry(0.12, 0.36, 4), 0, 1.02, -0.02); break;
+        case 'mohawk':
+          cap(0.508, 0.3);
+          for (let i = 0; i < 6; i++) { const t = -0.75 + i * 0.3; add(new T.BoxGeometry(0.1, 0.28 - Math.abs(t) * 0.08, 0.16), 0, 0.42 + Math.cos(t) * 0.55, Math.sin(t) * 0.52, m => { m.rotation.x = t; }); }
+          break;
+        case 'long':
+          cap(0.545, 0.52);
+          add(new T.BoxGeometry(0.92, 0.85, 0.2), 0, 0.12, -0.38, m => { m.rotation.x = 0.08; });
+          for (const sx of [-1, 1]) add(new T.BoxGeometry(0.14, 0.6, 0.3), sx * 0.5, 0.2, -0.08);
+          break;
+        case 'afro': {
+          const fro = add(new T.IcosahedronGeometry(0.7, 1), 0, 0.72, -0.14);
+          fro.scale.set(1, 0.82, 0.92); break; }
+        case 'bun':
+          cap(0.535, 0.5);
+          add(new T.IcosahedronGeometry(0.19, 1), 0, 0.98, -0.3); break;
+        default: cap(0.535, 0.5);   // 'short' (classic cap, forehead visible)
+      }
+    }
+
+    /** Rebuild every mesh from a new look (keeps the same root in the scene). */
+    rebuild(look) {
+      this.root.children.slice().forEach(c => {
+        c.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material && !Object.values(matCache).includes(o.material)) o.material.dispose();
+        });
+        this.root.remove(c);
+      });
+      this.look = look; this.laserMat = null; this.hitFX = null; this.fire = false;
+      this.build();
+      this.resetPose();
     }
 
     buildAccessory() {
@@ -992,10 +1061,75 @@ SAK.Scene3D = (function () {
     loop();
   }
 
-  function setPlayer(look) {
-    if (player) player.dispose();
-    player = new Fighter(look, -1, -1);   // player slaps with right hand (local -x)
-    scene.add(player.root);
+  /**
+   * The ONE place avatar params turn into a 3D model: rebuilds `model`
+   * (a Fighter) from profile avatar params ({ body, hairStyle, hairColor,
+   * skin, eyes, eyeColor, accessory, shirt }) or an already-built look.
+   */
+  function applyAvatar(model, params) {
+    const look = params && params.hairColor !== undefined ? SAK.Account.toLook(params) : params;
+    model.rebuild(look);
+    return model;
+  }
+
+  /** @param params player avatar params (or a look) */
+  function setPlayer(params) {
+    if (!player) { player = new Fighter(SAK.PLAYER.look, -1, -1); scene.add(player.root); }   // player slaps with right hand (local -x)
+    applyAvatar(player, params);
+  }
+
+  /**
+   * Mini turntable renderer for the character creator (own canvas/scene,
+   * shares Fighter + applyAvatar). Drag to spin. Returns { apply, dispose }.
+   */
+  function createPreview(canvas) {
+    const r = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    if ('outputColorSpace' in r) r.outputColorSpace = T.SRGBColorSpace;
+    const sc = new T.Scene();
+    sc.add(new T.HemisphereLight('#ffffff', '#9b6bff', 2.1));
+    const key = new T.DirectionalLight('#fff4e0', 2.4); key.position.set(3, 5, 4); sc.add(key);
+    const rim = new T.DirectionalLight('#7ad7ff', 1.3); rim.position.set(-4, 3, -4); sc.add(rim);
+    const pad = new T.Mesh(new T.CylinderGeometry(0.95, 1.05, 0.08, 20), new T.MeshLambertMaterial({ color: '#39ff88', flatShading: true }));
+    pad.position.y = -0.04; sc.add(pad);
+    const cam = new T.PerspectiveCamera(32, 1, 0.1, 50);
+    const F = new Fighter(SAK.PLAYER.look, +1, +1);
+    F.homeZ = 0; F.root.position.z = 0; sc.add(F.root);
+    let yaw = 0, vel = 0, drag = null, alive = true, last = performance.now(), idleSpin = true, idleT = 0;
+    const down = e => { drag = { x: e.clientX, yaw }; idleSpin = false; canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId); };
+    const move = e => { if (!drag) return; const nyaw = drag.yaw + (e.clientX - drag.x) * 0.012; vel = nyaw - yaw; yaw = nyaw; };
+    const up = () => { drag = null; };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    function size() {
+      const w = canvas.clientWidth || 300, h = canvas.clientHeight || 200;
+      r.setSize(w, h, false); cam.aspect = w / h;
+      // fit the whole fighter (~3.3 units tall incl. hair/hats) vertically; pull back on narrow canvases
+      const vfit = 3.25 / (2 * Math.tan(T.MathUtils.degToRad(cam.fov / 2)));
+      const dist = vfit * Math.max(1, 0.9 / cam.aspect);
+      cam.position.set(0, 1.9, dist); cam.lookAt(0, 1.55, 0); cam.updateProjectionMatrix();
+    }
+    function tick(now) {
+      if (!alive) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (!drag) { if (idleSpin) { idleT += dt; yaw = 0.45 * Math.sin(idleT * 0.9); } else { vel *= 0.92; yaw += vel; } }   // idle: face the camera with a gentle sway
+      F.root.rotation.y = yaw;
+      F.update(dt);
+      if (canvas.clientWidth && (canvas.width !== Math.round(canvas.clientWidth * r.getPixelRatio()))) size();
+      r.render(sc, cam);
+      requestAnimationFrame(tick);
+    }
+    size(); requestAnimationFrame(tick);
+    return {
+      apply(params) { applyAvatar(F, params); F.root.rotation.y = yaw; },
+      get yaw() { return yaw; },
+      dispose() {
+        alive = false; F.dispose(); pad.geometry.dispose(); pad.material.dispose(); r.dispose();
+        canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move);
+        canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up);
+      }
+    };
   }
 
   function setOpponent(look) {
@@ -1247,7 +1381,7 @@ SAK.Scene3D = (function () {
     if (F) F.laserUntil = time + (dur || 1);
   }
 
-  return { init, setPlayer, setOpponent, setMode, resetFight, setRoleCam, slap, knockout, setFireArmed, setBrace, screenPos, taunt, coinRain, laserEyes, setHelmet, setRage,
+  return { init, setPlayer, applyAvatar, createPreview, setOpponent, setMode, resetFight, setRoleCam, slap, knockout, setFireArmed, setBrace, screenPos, taunt, coinRain, laserEyes, setHelmet, setRage,
     get player() { return player; }, get kol() { return kol; },
     get camDebug() { return { hit: hitCam ? +hitCam.w.toFixed(3) : null, role: roleCam.role, roleW: +roleCam.w.toFixed(3), ko: !!koCam, t: +time.toFixed(2) }; } };
 })();

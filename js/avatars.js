@@ -10,11 +10,35 @@ SAK.avatarSVG = function (look, opts) {
   const s = look.skin, h = look.hair, a = look.accent || '#111';
   const dead = !!opts.ko;
 
-  const eyes = dead
-    ? `<g stroke="#222" stroke-width="3" stroke-linecap="round">
-         <path d="M33 45l8 8M41 45l-8 8"/><path d="M59 45l8 8M67 45l-8 8"/></g>`
-    : `<circle cx="37" cy="49" r="6" fill="#fff"/><circle cx="63" cy="49" r="6" fill="#fff"/>
-       <circle cx="38" cy="50" r="3" fill="#222"/><circle cx="62" cy="50" r="3" fill="#222"/>`;
+  const ec = look.eyeColor || '#222', es = look.eyes || 'round';
+  let eyes;
+  if (dead) eyes = `<g stroke="#222" stroke-width="3" stroke-linecap="round">
+         <path d="M33 45l8 8M41 45l-8 8"/><path d="M59 45l8 8M67 45l-8 8"/></g>`;
+  else if (es === 'dot') eyes = `<circle cx="37" cy="49" r="4" fill="${ec}"/><circle cx="63" cy="49" r="4" fill="${ec}"/>`;
+  else if (es === 'big') eyes = `<circle cx="37" cy="49" r="8.5" fill="#fff"/><circle cx="63" cy="49" r="8.5" fill="#fff"/>
+       <circle cx="38" cy="50" r="4.5" fill="${ec}"/><circle cx="62" cy="50" r="4.5" fill="${ec}"/>`;
+  else eyes = `<circle cx="37" cy="49" r="6" fill="#fff"/><circle cx="63" cy="49" r="6" fill="#fff"/>
+       <circle cx="38" cy="50" r="${es === 'angry' ? 2.4 : 3}" fill="${ec}"/><circle cx="62" cy="50" r="${es === 'angry' ? 2.4 : 3}" fill="${ec}"/>`
+       + (es === 'sleepy' ? `<path d="M30 49a7 7 0 0 1 14 0Z" fill="${s}"/><path d="M56 49a7 7 0 0 1 14 0Z" fill="${s}"/>` : '');
+  const brows = es === 'angry' ? `<path d="M30 39l12 5M70 39l-12 5" stroke="${h}" stroke-width="3.5" stroke-linecap="round"/>`
+    : `<path d="M30 40l12 2M70 40l-12 2" stroke="${h}" stroke-width="3.5" stroke-linecap="round"/>`;
+
+  // hair (KOLs without hairStyle keep the classic cap)
+  let hs = look.hairStyle || 'short';
+  if (['cap', 'beanie', 'tophat'].includes(look.accessory) && ['spiky', 'mohawk', 'afro', 'bun'].includes(hs)) hs = 'short';
+  const capPath = `<path d="M20 46 Q22 16 50 16 Q78 16 80 46 Q66 30 50 32 Q34 30 20 46Z" fill="${h}"/>`;
+  let hairBack = '', hairFront = '';
+  switch (hs) {
+    case 'bald': break;
+    case 'buzz': hairFront = `<path d="M22 42 Q24 20 50 20 Q76 20 78 42 Q66 31 50 32 Q34 31 22 42Z" fill="${h}" opacity="0.9"/>`; break;
+    case 'spiky': hairFront = capPath + `<path d="M24 32 L28 10 L37 24 L44 4 L50 20 L57 4 L63 24 L72 10 L76 32Z" fill="${h}"/>`; break;
+    case 'mohawk': hairFront = `<path d="M43 34 L44 4 L50 0 L56 4 L57 34Z" fill="${h}"/>`; break;
+    case 'long': hairBack = `<path d="M18 46 Q16 86 26 92 L74 92 Q84 86 82 46Z" fill="${h}"/>`; hairFront = capPath; break;
+    case 'afro': hairBack = `<circle cx="50" cy="36" r="34" fill="${h}"/>`; hairFront = `<path d="M22 44 Q24 22 50 24 Q76 22 78 44 Q66 32 50 34 Q34 32 22 44Z" fill="${h}"/>`; break;
+    case 'bun': hairFront = capPath + `<circle cx="50" cy="12" r="9" fill="${h}"/>`; break;
+    default: hairFront = capPath;
+  }
+  const sw = { chonk: [10, 90], gymbro: [8, 92], noodle: [26, 74], smol: [20, 80] }[look.body] || [18, 82];
 
   let acc = '';
   switch (look.accessory) {
@@ -47,13 +71,14 @@ SAK.avatarSVG = function (look, opts) {
   return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" class="avatar-svg">
     <rect width="100" height="100" rx="18" fill="${bg}"/>
     <rect y="80" width="100" height="20" fill="#0002"/>
-    <path d="M18 100 Q50 72 82 100 Z" fill="${look.shirt}" stroke="#0003" stroke-width="2"/>
+    ${hairBack}
+    <path d="M${sw[0]} 100 Q50 72 ${sw[1]} 100 Z" fill="${look.shirt}" stroke="#0003" stroke-width="2"/>
     <circle cx="50" cy="50" r="30" fill="${s}" stroke="#0003" stroke-width="2"/>
-    <path d="M20 46 Q22 16 50 16 Q78 16 80 46 Q66 30 50 32 Q34 30 20 46Z" fill="${h}"/>
+    ${hairFront}
     <circle cx="24" cy="54" r="5" fill="${s}" stroke="#0002" stroke-width="2"/>
     <circle cx="76" cy="54" r="5" fill="${s}" stroke="#0002" stroke-width="2"/>
     ${eyes}
-    <path d="M30 40l12 2M70 40l-12 2" stroke="${h}" stroke-width="3.5" stroke-linecap="round"/>
+    ${brows}
     <ellipse cx="50" cy="59" rx="4" ry="3" fill="#0002"/>
     ${mouth}
     ${opts.blush ? '<ellipse cx="68" cy="62" rx="9" ry="6" fill="#ff2d2d" opacity="0.55"/>' : ''}

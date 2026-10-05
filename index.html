@@ -232,20 +232,46 @@
   </div>
 
   <div id="modal-fighter" class="modal hidden">
-    <form class="modal-card submit-card" id="fighter-form" autocomplete="off">
-      <h3>👤 MY FIGHTER</h3>
-      <div class="submit-top">
-        <div id="fit-preview" class="sub-preview"></div>
-        <div class="sub-fields">
-          <label>Name<input id="fit-name" maxlength="16" placeholder="e.g. CheekSniper" required /></label>
-          <label>Catchphrase<input id="fit-phrase" maxlength="60" placeholder="e.g. Few understand this slap." /></label>
+    <form class="modal-card creator-card" id="fighter-form" autocomplete="off" novalidate>
+      <!-- Step 1: create a local account (name) -->
+      <div class="cr-step" id="cr-step-name">
+        <h3>🪪 CREATE ACCOUNT</h3>
+        <p class="fine dark">Local degen account: saved on this device only. No email, no KYC, no seed phrase. Just vibes.</p>
+        <label class="cr-label">PLAYER NAME<input id="fit-name" maxlength="16" placeholder="e.g. CheekSniper" autocapitalize="off" spellcheck="false" /></label>
+        <div class="cr-err" id="cr-name-err"></div>
+        <div class="row">
+          <button type="button" class="btn btn-grey" id="cr-later">Later</button>
+          <button type="button" class="btn btn-green" id="cr-next">NEXT →</button>
         </div>
       </div>
-      <div class="swatch-row"><span>Colour</span><div class="swatches" id="fit-colours"></div></div>
-      <p class="fine dark">Your fighter shows on the LEFT in every fight. Face &amp; hair auto-generate from your name.</p>
-      <div class="row">
-        <button type="button" class="btn btn-grey" data-close>Later</button>
-        <button type="submit" class="btn btn-green">LFG 🚀</button>
+      <!-- Step 2: character creator with live 3D preview -->
+      <div class="cr-step hidden" id="cr-step-look">
+        <h3 id="cr-title">👤 BUILD YOUR FIGHTER</h3>
+        <div class="cr-preview" id="cr-preview">
+          <canvas id="cr-canvas" aria-label="3D fighter preview, drag to spin"></canvas>
+          <div class="cr-fallback hidden" id="cr-fallback"></div>
+          <span class="cr-spin-hint">⟲ drag to spin</span>
+          <button type="button" class="cr-random" id="cr-random" aria-label="Randomize fighter">🎲 RANDOM</button>
+        </div>
+        <label class="cr-label cr-inline">NAME<input id="cr-name" maxlength="16" autocapitalize="off" spellcheck="false" /></label>
+        <div class="cr-rows">
+          <div class="cr-row"><span class="cr-k">BODY</span><div class="cr-chips" data-opt="body"></div></div>
+          <div class="cr-row"><span class="cr-k">HAIR</span><div class="cr-chips" data-opt="hairStyle"></div></div>
+          <div class="cr-row"><span class="cr-k"></span><div class="cr-swatches" data-opt="hairColor"></div></div>
+          <div class="cr-row"><span class="cr-k">SKIN</span><div class="cr-swatches" data-opt="skin"></div></div>
+          <div class="cr-row"><span class="cr-k">EYES</span><div class="cr-chips" data-opt="eyes"></div></div>
+          <div class="cr-row"><span class="cr-k"></span><div class="cr-swatches" data-opt="eyeColor"></div></div>
+          <div class="cr-row"><span class="cr-k">FIT</span><div class="cr-swatches" data-opt="shirt"></div></div>
+          <div class="cr-row"><span class="cr-k">DRIP</span><div class="cr-chips" data-opt="accessory"></div></div>
+        </div>
+        <label class="cr-label cr-inline">QUOTE<input id="fit-phrase" maxlength="60" placeholder="gm. prepare to get slapped." /></label>
+        <div class="cr-err" id="cr-look-err"></div>
+        <!-- Hook for a future feature: AI reads an uploaded PFP and fills the avatar params (SAK.Account.fromPfp) -->
+        <button type="button" class="cr-pfp" id="cr-pfp" disabled title="Coming soon: AI turns your PFP into a fighter">📸 Upload PFP — AI fighter <small>(coming soon)</small></button>
+        <div class="row cr-actions">
+          <button type="button" class="btn btn-grey" id="cr-cancel">Cancel</button>
+          <button type="submit" class="btn btn-green" id="cr-save">SAVE · LFG 🚀</button>
+        </div>
       </div>
     </form>
   </div>
@@ -284,6 +310,7 @@
 <script src="js/config.js"></script>
 <script src="js/roster.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/account.js"></script>
 <script src="js/wallet.js"></script>
 <script src="js/economy.js"></script>
 <script src="js/matchmaking.js"></script>

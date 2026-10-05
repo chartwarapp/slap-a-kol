@@ -24,7 +24,10 @@ Haptics use the Vibration API (Android Chrome; iPhone Safari does not support we
 
 ## How to play
 
-1. **Create your fighter**: name, colour, catchphrase. You show up on the LEFT in every fight.
+1. **Create an account + fighter** (first launch; edit any time from the fighter chip on the menu): pick a player name (2–16 chars), then build your low-poly fighter with a live 3D preview (drag to spin): body preset, hair style + colour, skin tone, eye style + colour, outfit colour, accessory, catchphrase, or hit 🎲 RANDOM. Accounts are local only (no backend). You show up on the LEFT in every fight, in the HUD portrait, on the leaderboard and on the results screen.
+   - Saved as a versioned profile in the save blob: `{ v: 2, id, name, createdAt, phrase, avatar: { body, hairStyle, hairColor, skin, eyes, eyeColor, accessory, shirt } }`. Old `{ name, colour, phrase }` fighters are migrated automatically.
+   - `SAK.Scene3D.applyAvatar(model, params)` is the single function that turns avatar params into the 3D model (arena + creator preview). `SAK.Account.toLook()` feeds the SVG portraits.
+   - **Upload PFP → AI fighter** is a disabled "coming soon" button. Later, an AI that reads a PFP only has to return the `avatar` params (`SAK.Account.fromPfp` stub).
 2. **SEND IT (free play)** or **⚔ Challenge a player**: pick a mode, optionally bet PTS.
 3. **Private meter (per device)**: you only see **your** needle this round.
    - Role label: **🥊 ATTACK** or **🛡 BRACE** (roles alternate each round).
@@ -80,12 +83,13 @@ To reset everything, use ⚙ → Reset progress (or clear localStorage).
 ## Code map
 
 ```
-index.html          screens + modals (menu, picker, fight HUD, result, vault, PvP, leaderboard, submit, fighter)
+index.html          screens + modals (menu, picker, fight HUD, result, vault, PvP, leaderboard, submit, account/creator)
 css/style.css       mobile-first portrait UI (centred phone column on desktop)
 vendor/three.min.js Three.js r158 classic build (no CDN needed)
 js/config.js        ALL tunables: economy, meter zones, modes, power-ups, staking tiers, copy pools, UGC rules
 js/roster.js        KOL roster data array  ← edit names here
 js/storage.js       versioned localStorage save
+js/account.js       local accounts: profile schema, avatar options/presets, migration, name rules
 js/wallet.js        MOCK Solana wallet adapter (identity only)
 js/economy.js       SAK.Points (PTS ledger) + SAK.Vault (staking)
 js/matchmaking.js   PvP stub → AI stand-in

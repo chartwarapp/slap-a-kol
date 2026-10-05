@@ -42,13 +42,15 @@
   const boosted = n => Math.round(n * (1 + V.boost));
 
   /* ------------------------------------------------------- player fighter */
-  const DEFAULT_PROFILE = { name: 'YOU', colour: '#2f80ff', phrase: 'gm. prepare to get slapped.' };
+  const DEFAULT_PHRASE = 'gm. prepare to get slapped.';
+  const DEFAULT_PROFILE = { v: SAK.Account.VERSION, id: 'guest', name: 'YOU', createdAt: 0, phrase: DEFAULT_PHRASE, avatar: SAK.Account.defaultAvatar() };
+  // migrate a pre-account save ({ name, colour, phrase }) into the v2 profile
+  if (SAK.Account.migrate(S, (n, c) => lookFromName(n, c))) SAK.Storage.save();
   const profile = () => S.profile || DEFAULT_PROFILE;
-  /** Player's 3D/SVG look: chosen colour + face/hair hashed from the name. */
-  function playerLook() {
-    const p = profile(), L = lookFromName(p.name, p.colour), base = SAK.PLAYER.look;
-    return { skin: S.profile ? L.skin : base.skin, hair: S.profile ? L.hair : base.hair, shirt: p.colour, pants: base.pants, accessory: 'headband', accent: '#ffffff' };
-  }
+  const playerPhrase = () => profile().phrase || DEFAULT_PHRASE;
+  const playerAvatar = () => profile().avatar;
+  /** Player's SVG/3D look, derived from the saved account avatar params. */
+  const playerLook = () => SAK.Account.toLook(playerAvatar());
 
   /* ------------------------------------------------------------ roster (UGC) */
   /** Turn a saved user submission into a full KOL object. */
@@ -196,41 +198,82 @@
   });
   $('#btn-fighter').addEventListener('click', () => { A.unlock(); A.click(); openFighter(false); });
 
-  /* --- create / edit my fighter (name, colour, catchphrase) -------------- */
-  let fighterDraft = null, playAfterFighter = false;
+  /* --- account + character creator ------------------------------------
+   * First launch: CREATE ACCOUNT (name) → BUILD YOUR FIGHTER (live 3D
+   * preview, drag to spin). Editable later from the menu fighter chip. */
+  let crDraft = null, crPreview = null, playAfterFighter = false, crIsNew = false, welcomePending = false;
+  const AO = SAK.Account.OPTIONS;
   function openFighter(thenPlay) {
     playAfterFighter = !!thenPlay;
+    crIsNew = !S.profile;
     const p = profile();
-    fighterDraft = { colour: p.colour };
+    crDraft = Object.assign({}, p.avatar);
     $('#fit-name').value = S.profile ? p.name : '';
-    $('#fit-phrase').value = S.profile ? p.phrase : '';
-    $('#fit-colours').innerHTML = SAK.UGC.palettes.shirt.concat(['#39ff88', '#ffffff']).map(c => `<button type="button" data-c="${c}" style="background:${c}"></button>`).join('');
-    $$('#fit-colours button').forEach(b => b.onclick = () => { fighterDraft.colour = b.dataset.c; renderFighterDraft(); });
-    $('#fit-name').oninput = renderFighterDraft;
-    renderFighterDraft();
+    $('#cr-name').value = S.profile ? p.name : '';
+    $('#fit-phrase').value = S.profile ? (p.phrase || '') : '';
+    $('#cr-name-err').textContent = ''; $('#cr-look-err').textContent = '';
     $('#modal-fighter').classList.remove('hidden');
+    if (crIsNew) showCreatorStep('name'); else showCreatorStep('look');
   }
-  function renderFighterDraft() {
-    const name = $('#fit-name').value.trim() || 'YOU', L = lookFromName(name, fighterDraft.colour);
-    $('#fit-preview').innerHTML = SAK.avatarSVG({ skin: L.skin, hair: L.hair, shirt: fighterDraft.colour, accessory: 'headband' });
-    $$('#fit-colours button').forEach(b => b.classList.toggle('on', b.dataset.c === fighterDraft.colour));
+  function showCreatorStep(step) {
+    $('#cr-step-name').classList.toggle('hidden', step !== 'name');
+    $('#cr-step-look').classList.toggle('hidden', step !== 'look');
+    $('#cr-title').textContent = crIsNew ? '👤 BUILD YOUR FIGHTER' : '👤 EDIT MY FIGHTER';
+    if (step === 'name') { setTimeout(() => $('#fit-name').focus(), 50); return; }
+    renderCreatorOptions();
+    if (!crPreview && Scene && Scene.createPreview) {
+      try { crPreview = Scene.createPreview($('#cr-canvas')); } catch (err) { console.warn('[SAK] preview unavailable', err); crPreview = null; }
+    }
+    $('#cr-canvas').classList.toggle('hidden', !crPreview);
+    $('#cr-fallback').classList.toggle('hidden', !!crPreview);
+    renderCreatorPreview();
   }
+  function closeCreator() {
+    $('#modal-fighter').classList.add('hidden');
+    if (crPreview) { crPreview.dispose(); crPreview = null; }
+    if (welcomePending) { welcomePending = false; setTimeout(() => toast(`🎁 Welcome bonus: +${fmt(SAK.POINTS.welcomeBonus)} PTS to get slapping`, 2600), 2000); }
+  }
+  function renderCreatorOptions() {
+    $$('#cr-step-look [data-opt]').forEach(box => {
+      const key = box.dataset.opt, list = AO[key], chips = box.classList.contains('cr-chips');
+      box.innerHTML = list.map(o => chips
+        ? `<button type="button" data-v="${o.id}" class="${crDraft[key] === o.id ? 'on' : ''}">${o.label}</button>`
+        : `<button type="button" data-v="${o}" class="${crDraft[key] === o ? 'on' : ''}" style="background:${o}" aria-label="${key} ${o}"></button>`).join('');
+      box.querySelectorAll('button').forEach(b => b.onclick = () => { A.click(); crDraft[key] = b.dataset.v; renderCreatorOptions(); renderCreatorPreview(); });
+    });
+  }
+  function renderCreatorPreview() {
+    if (crPreview) crPreview.apply(crDraft);
+    else $('#cr-fallback').innerHTML = SAK.avatarSVG(SAK.Account.toLook(crDraft));
+  }
+  $('#cr-next').addEventListener('click', () => {
+    const n = SAK.Account.validateName($('#fit-name').value), v = n.ok ? validateText(n.ok, SAK.UGC.maxName) : n;
+    if (v.err) { $('#cr-name-err').textContent = 'Name: ' + v.err; return; }
+    A.click();
+    $('#cr-name').value = v.ok;
+    if (crIsNew) crDraft = SAK.Account.randomAvatar();   // fresh degen, tweak from here
+    showCreatorStep('look');
+  });
+  $('#fit-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#cr-next').click(); } });
+  $('#cr-random').addEventListener('click', () => { A.click(); crDraft = SAK.Account.randomAvatar(); renderCreatorOptions(); renderCreatorPreview(); });
+  $('#cr-later').addEventListener('click', () => { closeCreator(); if (playAfterFighter) setTimeout(openPicker, 50); });   // play as guest
+  $('#cr-cancel').addEventListener('click', () => { if (crIsNew) showCreatorStep('name'); else closeCreator(); });
   $('#fighter-form').addEventListener('submit', e => {
     e.preventDefault();
-    const n = validateText($('#fit-name').value, SAK.UGC.maxName);
-    const ph = validateText($('#fit-phrase').value || DEFAULT_PROFILE.phrase, SAK.UGC.maxCatchphrase);
-    if (n.err) return toast('Name: ' + n.err);
-    if (ph.err) return toast('Catchphrase: ' + ph.err);
-    S.profile = { name: n.ok, colour: fighterDraft.colour, phrase: ph.ok };
+    const n = SAK.Account.validateName($('#cr-name').value), v = n.ok ? validateText(n.ok, SAK.UGC.maxName) : n;
+    if (v.err) { $('#cr-look-err').textContent = 'Name: ' + v.err; return; }
+    const rawPh = $('#fit-phrase').value.trim();
+    const ph = rawPh ? validateText(rawPh, SAK.UGC.maxCatchphrase) : { ok: '' };
+    if (ph.err) { $('#cr-look-err').textContent = 'Quote: ' + ph.err; return; }
+    if (S.profile) Object.assign(S.profile, { name: v.ok, phrase: ph.ok, avatar: SAK.Account.sanitize(crDraft) });
+    else S.profile = SAK.Account.create(v.ok, crDraft, ph.ok);
     SAK.Storage.save();
-    if (Scene) Scene.setPlayer(playerLook());
-    $('#modal-fighter').classList.add('hidden');
-    A.perfect(); toast(`${n.ok} has entered the arena. LFG 🚀`);
+    if (Scene) Scene.setPlayer(playerAvatar());
+    closeCreator();
+    A.perfect(); toast(crIsNew ? `🪪 Account created. ${v.ok} has entered the arena. LFG 🚀` : `${v.ok}: fresh drip saved 💅`);
     renderMenu();
     if (playAfterFighter) openPicker();
   });
-  // "Later" on first run still lets you play as the default fighter
-  $('#modal-fighter [data-close]').addEventListener('click', () => { if (playAfterFighter) setTimeout(openPicker, 50); });
   $('#btn-vault').addEventListener('click', () => { A.unlock(); A.click(); openVault(); });
   $('#btn-rescue').addEventListener('click', () => {
     if (S.points >= SAK.POINTS.rescueThreshold) return;
@@ -559,7 +602,7 @@
     renderHp(true); renderUpgrades(); renderPowerups(); renderRoundScore();
     if (Scene) { Scene.setHelmet(false); Scene.setRage(false); }
     show('fight');
-    sayPlayer(profile().phrase);
+    sayPlayer(playerPhrase());
     setTimeout(() => F && F.kol === kol && say(pick(kol.taunts)), 900);
     setTimeout(() => F && F.kol === kol && startChallengeRound(), 700);
   }
@@ -926,7 +969,7 @@
         pk.classList.remove('hit'); void pk.offsetWidth; pk.classList.add('hit');
         if (target === 'k') pk.innerHTML = SAK.avatarSVG(F.kol.look, { blush: true });
         else pk.innerHTML = SAK.avatarSVG(playerLook(), { blush: true });
-        if (playerIsAtk && grade.id === 'perfect' && Math.random() < 0.5) sayPlayer(profile().phrase);
+        if (playerIsAtk && grade.id === 'perfect' && Math.random() < 0.5) sayPlayer(playerPhrase());
         else if (!playerIsAtk && Math.random() < 0.35) say(pick(F.kol.taunts));
       } else {
         A.brace();
@@ -1143,7 +1186,7 @@
     $('#lb-list').innerHTML = list.map(e => `
       <div class="lb-row ${e.me ? 'me' : ''}">
         <span class="rk">${medal(e.rank)}</span>
-        <span>${lbTab === 'friends' ? `<span class="dot ${e.online ? 'on' : ''}"></span>` : ''}${esc(e.name)}<small>${e.wins} wins</small></span>
+        <span>${lbTab === 'friends' ? `<span class="dot ${e.online ? 'on' : ''}"></span>` : ''}${e.me ? `<span class="lb-av">${SAK.avatarSVG(playerLook())}</span>` : ''}${esc(e.name)}<small>${e.wins} wins</small></span>
         <span class="pt">${ptsHTML()}${fmt(e.pts)}</span>
       </div>`).join('');
     $('#modal-lb').classList.remove('hidden');
@@ -1265,7 +1308,7 @@
     if (!confirm('Reset points, upgrades, fan KOLs and stats?')) return;
     SAK.Storage.reset(); location.reload();
   });
-  $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
+  $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target !== m) return; if (m.id === 'modal-fighter') closeCreator(); else m.classList.add('hidden'); }));
   $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('.modal').classList.add('hidden')));
 
   /* ======================================================= pump/dump ticker */
@@ -1294,7 +1337,8 @@
     if (!S.welcomeGranted) {
       S.welcomeGranted = true;
       S.points += SAK.POINTS.welcomeBonus; SAK.Storage.save();
-      setTimeout(() => toast(`🎁 Welcome! +${fmt(SAK.POINTS.welcomeBonus)} PTS to get slapping`, 2600), 600);
+      if (S.profile) setTimeout(() => toast(`🎁 Welcome! +${fmt(SAK.POINTS.welcomeBonus)} PTS to get slapping`, 2600), 600);
+      else welcomePending = true;   // shown once the account is created (or skipped)
     }
     lastSlots = ugcSlotsUnlocked();
     MeterLocal = SAK.createMeter($('#meter-local'), { jerky: true, label: '' });
@@ -1304,7 +1348,7 @@
       if (!window.THREE) throw new Error('three.js failed to load');
       SAK.Scene3D.init($('#stage'));
       Scene = SAK.Scene3D;
-      Scene.setPlayer(playerLook());
+      Scene.setPlayer(playerAvatar());
       menuScene();
     } catch (err) {
       console.error(err);
@@ -1313,6 +1357,8 @@
     shownPts = S.points; $('#points').textContent = fmt(S.points);
     renderMenu();
     show('menu');
+    // First launch: create a local account + fighter
+    if (!S.profile) setTimeout(() => { if (!S.profile && screen === 'menu') openFighter(false); }, 500);
     // debug hook for console testing / automated smoke tests
     window.SAK_DEBUG = {
       state: S, get fight() { return F; }, roster, openVault, openSubmit, openPvp, openLeaderboard,
