@@ -180,11 +180,12 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 .prompt {
   /* Flows above .private-meter inside .bottom-zone — never under the panel */
   position: relative; left: auto; right: auto; bottom: auto; z-index: 14;
-  margin: 0 0 12px; padding: 0 8px; text-align: center; font-size: 34px; color: #fff;
+  /* side padding keeps the text clear of the power-up rail / status chips at the screen edges */
+  margin: 0 0 12px; padding: 0 70px; align-self: stretch; text-align: center; font-size: 28px; color: #fff;
   line-height: 1.05; pointer-events: none; animation: pulse .9s ease-in-out infinite;
   text-shadow: var(--outline-soft);
 }
-.prompt.kol-turn { color: var(--red); font-size: 30px; animation: none; }
+.prompt.kol-turn { color: var(--red); font-size: 26px; animation: none; }
 .taunt {
   position: absolute; top: calc(150px + var(--safe-top)); right: 14px; max-width: 64%; background: #fff; color: var(--ink); font-family: system-ui, sans-serif;
   font-weight: 800; font-size: 14px; padding: 8px 12px; border-radius: 14px 14px 2px 14px; box-shadow: 0 4px 0 #0004; animation: pop .25s ease-out;
