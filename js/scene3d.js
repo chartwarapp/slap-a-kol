@@ -53,7 +53,7 @@ SAK.Scene3D = (function () {
   let particles = [], rings = [];
   let candles = [], coins = [];
   let shake = 0, time = 0, mode = 'menu';
-  let koCam = null; // { track:Fighter, until:number } — pullback + follow loser
+  let koCam = null; // { track:Fighter, offset:Vector3, until:number } — follow loser fly-out
   const camBase = { pos: new T.Vector3(), look: new T.Vector3() };
   const camCur = { pos: new T.Vector3(), look: new T.Vector3() };
 
@@ -660,15 +660,14 @@ SAK.Scene3D = (function () {
       camBase.look.set(0, 2.0 - 0.75 * (k - 1), -0.8);
       const dir = new T.Vector3(0.35, 0.12, 1).normalize();
       camBase.pos.set(0, 2.3, -0.8).addScaledVector(dir, 4.1 * k);
-    } else {
+    } else if (!koCam) {
       // side three-quarter view: both faces + the slapping arms read clearly
       camBase.look.set(0, 1.75, 0);
       const dir = new T.Vector3(1, 0.42, 0.42).normalize();
-      const pull = koCam ? 1.48 : 1; // zoom out further during KO fly-out
-      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.9 * k * pull);
+      camBase.pos.copy(camBase.look).addScaledVector(dir, 5.9 * k);
       camBase.look.y -= 0.35 * (k - 1); // leave room for the meter at the bottom
-      if (koCam) { camBase.pos.y += 0.85; camBase.look.y = Math.max(0.55, camBase.look.y - 0.35); }
     }
+    // during KO fly-out, loop() owns camBase (tracks the loser) — don't overwrite
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
   }
@@ -688,12 +687,16 @@ SAK.Scene3D = (function () {
     }
     for (const c of coins) { c.rotation.z += dt * 1.5; c.position.y += Math.sin(time * 1.3 + c.userData.phase) * 0.003; }
 
-    // KO camera: keep pulling back + track the flyer so the smack-out reads clearly
+    // KO camera: hard-track the loser so they never leave frame during fly-out
     if (koCam) {
       const F = koCam.track;
       if (F && F.root) {
-        const fly = F.root.position;
-        camBase.look.set(fly.x * 0.35, Math.max(0.6, fly.y * 0.45 + 0.9), fly.z * 0.25);
+        const head = F.headWorld();
+        // Aim at the skull (slightly lower so the spinning body stays readable)
+        camBase.look.set(head.x, Math.max(0.35, head.y - 0.2), head.z);
+        // Keep a pulled-back three-quarter offset that rides with the flyer
+        const off = koCam.offset || new T.Vector3(5.2, 2.6, 3.4);
+        camBase.pos.set(head.x + off.x, Math.max(1.8, head.y + off.y), head.z + off.z);
       }
       if (time > koCam.until) koCam = null;
     }
@@ -811,7 +814,7 @@ SAK.Scene3D = (function () {
   }
 
   /** Send the loser flying backwards off the ring. Resolves when done.
-   *  Extra camera pullback + stronger cartoon fly-out so the KO reads clearly. */
+   *  Camera hard-tracks the loser through the fly-out so they stay on-frame. */
   async function knockout(who) {
     const F = who === 'player' ? player : kol;
     F.xEyes.visible = true; F.eyes.visible = false;
@@ -834,17 +837,16 @@ SAK.Scene3D = (function () {
     shake = Math.max(shake, 0.7);
     burst(F.headWorld(), ['#ffd23f', '#ffffff', '#39ff88'], 24, 5);
 
-    // Camera pullback (~45% further + slightly higher) so you see them leave the ring
-    const dir = camBase.pos.clone().sub(camBase.look).normalize();
-    const dist = camBase.pos.distanceTo(camBase.look);
-    camBase.pos.copy(camBase.look).addScaledVector(dir, dist * 1.48);
-    camBase.pos.y += 0.85;
-    camBase.look.y = Math.max(0.55, camBase.look.y - 0.35);
-    // Widen FOV briefly for a dramatic establishing feel
+    // Follow-cam: lock onto the loser and ride with them through the fly-out
+    const head0 = F.headWorld();
+    const followOff = new T.Vector3(5.2, 2.6, 3.4); // pulled-back three-quarter
+    camBase.look.set(head0.x, Math.max(0.35, head0.y - 0.2), head0.z);
+    camBase.pos.set(head0.x + followOff.x, Math.max(1.8, head0.y + followOff.y), head0.z + followOff.z);
+    // Widen FOV briefly so the spinning body stays in frame as they leave
     const fov0 = camera.fov;
     camera.fov = Math.min(58, fov0 + 10);
     camera.updateProjectionMatrix();
-    koCam = { track: F, until: time + 2.05 };
+    koCam = { track: F, offset: followOff, until: time + 2.05 };
 
     await wait(2.05);
     koCam = null;
