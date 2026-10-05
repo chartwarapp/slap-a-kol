@@ -62,6 +62,26 @@ SAK.Audio = (function () {
     ko() { if (!ready()) return; tone(520, 0.7, 'sawtooth', 0.2, 0, 90); noise(0.4, 300, 0.7, 0.6, 'lowpass'); },
     win() { if (!ready()) return; [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.35, 'triangle', 0.2, i * 0.11)); },
     lose() { if (!ready()) return; [392, 330, 262].forEach((f, i) => tone(f, 0.45, 'sine', 0.2, i * 0.18)); },
-    brace() { if (!ready()) return; tone(300, 0.1, 'square', 0.12); }
+    brace() { if (!ready()) return; tone(300, 0.1, 'square', 0.12); },
+    /** Cartoon pain yelp — louder / lower for bigger hit tiers. */
+    yelp(tier) {
+      if (!ready()) return;
+      const t = tier || 'light';
+      if (t === 'light') {
+        tone(560, 0.07, 'square', 0.11, 0, 400);
+      } else if (t === 'medium') {
+        tone(500, 0.1, 'square', 0.15, 0, 320);
+        tone(210, 0.12, 'triangle', 0.1, 0.03, 130);
+      } else if (t === 'heavy') {
+        tone(400, 0.14, 'sawtooth', 0.2, 0, 170);
+        noise(0.12, 900, 1.0, 0.28);
+        tone(150, 0.2, 'sine', 0.16, 0.05, 70);
+      } else { // perfect
+        tone(360, 0.18, 'sawtooth', 0.24, 0, 130);
+        tone(980, 0.09, 'square', 0.12, 0.03, 520);
+        noise(0.16, 700, 0.85, 0.38);
+        tone(110, 0.28, 'sine', 0.22, 0.06, 55);
+      }
+    }
   };
 })();

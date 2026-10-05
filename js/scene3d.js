@@ -107,6 +107,48 @@ SAK.Scene3D = (function () {
   ];
   function pickLandPose() { return LAND_POSES[(Math.random() * LAND_POSES.length) | 0]; }
 
+  /* Hit-reaction tiers — cartoon pain scaled by how close to green (no gore). */
+  const HIT_REACT = {
+    light: {
+      yaw: 5.5, roll: 3.2, lean: 0.14, mouthY: 2.2, mouthMs: 220,
+      sx: 1.18, sy: 0.82, sz: 1.12, squashDur: 0.24,
+      stars: 0, burstN: 9, burstSpd: 2.5, shake: 0.15, hitStop: 0.03,
+      blushAdd: 0.12, colors: ['#ffffff', '#fff27a'], ring: '#ffffff', yelpDelay: 0
+    },
+    medium: {
+      yaw: 9.5, roll: 5.8, lean: 0.24, mouthY: 2.9, mouthMs: 340,
+      sx: 1.3, sy: 0.7, sz: 1.2, squashDur: 0.34,
+      stars: 2, burstN: 18, burstSpd: 3.5, shake: 0.26, hitStop: 0.055,
+      blushAdd: 0.22, colors: ['#ffffff', '#ffd23f', '#ff9a1f'], ring: '#ffd23f', yelpDelay: 0.02
+    },
+    heavy: {
+      yaw: 14.5, roll: 9.2, lean: 0.36, mouthY: 3.5, mouthMs: 440,
+      sx: 1.42, sy: 0.55, sz: 1.28, squashDur: 0.45,
+      stars: 4, burstN: 28, burstSpd: 4.6, shake: 0.4, hitStop: 0.09,
+      blushAdd: 0.38, colors: ['#ffd23f', '#ff9a1f', '#ff4fd8', '#ffffff'], ring: '#ff9a1f', yelpDelay: 0.04
+    },
+    perfect: {
+      yaw: 19, roll: 12.5, lean: 0.45, mouthY: 3.9, mouthMs: 560,
+      sx: 1.58, sy: 0.45, sz: 1.38, squashDur: 0.58,
+      stars: 6, burstN: 40, burstSpd: 5.8, shake: 0.58, hitStop: 0.13,
+      blushAdd: 0.55, colors: ['#39ff88', '#ffd23f', '#ffffff', '#ff4fd8', '#ff7a9a'], ring: '#39ff88', yelpDelay: 0.06
+    }
+  };
+
+  /** Map meter grade (+ fire / distance) → light|medium|heavy|perfect. */
+  function reactTier(grade, fire, dist) {
+    if (!grade || grade === 'miss') return null;
+    if (grade === 'perfect') return 'perfect';
+    if (grade === 'weak') return fire ? 'medium' : 'light';
+    if (grade === 'good') {
+      if (fire) return 'heavy';
+      if (dist != null && dist < 20) return 'heavy'; // inner yellow → heavy
+      return 'medium';
+    }
+    return 'medium';
+  }
+
+
 
   /* ================================================================ Fighter */
   class Fighter {
@@ -152,6 +194,8 @@ SAK.Scene3D = (function () {
       const skull = mesh(new T.IcosahedronGeometry(0.5, 1), skin, 0, 0.42, 0);
       skull.scale.set(1, 1.06, 0.98); this.head.add(skull);
       this.skull = skull;
+      this.skullBase = new T.Vector3(1, 1.06, 0.98);
+      this.hitFX = null; // { until, dur, sx, sy, sz, stars }
       // hair cap (top + back), forehead stays visible
       const hairCap = mesh(new T.SphereGeometry(0.535, 9, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), hair, 0, 0.47, -0.04);
       hairCap.rotation.x = -0.35; this.head.add(hairCap);
@@ -318,6 +362,33 @@ SAK.Scene3D = (function () {
       this.lasers.visible = time < this.laserUntil;
       if (this.rage.visible) { const k = 1 + Math.sin(time * 14) * 0.08; this.rage.scale.set(k, k, k); this.rage.material.opacity = 0.18 + Math.random() * 0.12; }
       if (this.lasers.visible) this.lasers.children.forEach(c => { if (c.geometry.type === 'CylinderGeometry') c.scale.set(1 + Math.random() * 0.6, 1, 1 + Math.random() * 0.6); });
+      // Face-squash + dizzy stars from a slap reaction
+      if (this.hitFX) {
+        const h = this.hitFX;
+        const u = Math.max(0, Math.min(1, (h.until - time) / h.dur)); // 1→0
+        const e = u * u;
+        this.skull.scale.set(
+          this.skullBase.x * (1 + (h.sx - 1) * e),
+          this.skullBase.y * (1 + (h.sy - 1) * e),
+          this.skullBase.z * (1 + (h.sz - 1) * e)
+        );
+        if (h.stars) {
+          h.stars.rotation.y += dt * (5 + (1 - u) * 2);
+          h.stars.children.forEach((c, i) => {
+            c.position.y = 0.75 + Math.sin(time * 9 + i * 1.7) * 0.1;
+            c.rotation.z += dt * 5;
+            c.rotation.x += dt * 3;
+          });
+        }
+        if (time >= h.until) {
+          this.skull.scale.copy(this.skullBase);
+          if (h.stars) {
+            h.stars.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            this.head.remove(h.stars);
+          }
+          this.hitFX = null;
+        }
+      }
     }
 
     get slapHand() { return this.arms[this.armSide].hand; }
@@ -349,11 +420,22 @@ SAK.Scene3D = (function () {
       this.mouth.scale.set(1, 3, 1);
     }
 
+    clearHitFX() {
+      if (!this.hitFX) return;
+      if (this.hitFX.stars) {
+        this.hitFX.stars.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        this.head.remove(this.hitFX.stars);
+      }
+      if (this.skullBase) this.skull.scale.copy(this.skullBase);
+      this.hitFX = null;
+    }
+
     resetPose() {
       Object.assign(this.pose, { lift: 0.12, swing: 0, elbow: 0.15, twist: 0, lean: 0, lunge: 0, guard: 0 });
       this.yaw.x = this.yaw.v = this.roll.x = this.roll.v = 0;
       this.ko = null; this.xEyes.visible = false; this.eyes.visible = true; this.laserUntil = 0;
       this.mouth.scale.set(1, 1, 1);
+      this.clearHitFX();
       this.root.position.set(0, 0, this.homeZ);
       this.root.rotation.set(0, this.facing > 0 ? 0 : Math.PI, 0);
       this.torso.position.y = 0.95;
@@ -850,15 +932,68 @@ SAK.Scene3D = (function () {
     if (mode === 'fight' || mode === 'arena') frameCamera();
   }
 
+  /** Spawn dizzy ★ stars that orbit the defender's head for a beat. */
+  function spawnHitStars(F, count) {
+    if (count <= 0) return null;
+    const g = new T.Group();
+    const starMat = new T.MeshBasicMaterial({ color: '#ffd23f' });
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2;
+      const s = new T.Mesh(new T.OctahedronGeometry(0.09, 0), starMat.clone());
+      s.position.set(Math.cos(ang) * 0.55, 0.75, Math.sin(ang) * 0.55);
+      s.scale.set(1, 1.35, 0.55);
+      g.add(s);
+    }
+    F.head.add(g);
+    return g;
+  }
+
+  /** Apply tiered cartoon damage reaction to the defender (no gore). */
+  function applyHitReact(D, tier, fire) {
+    const R = HIT_REACT[tier] || HIT_REACT.light;
+    const fireMul = fire ? 1.35 : 1;
+    const hp = D.headWorld(); hp.x += 0.35; hp.y -= 0.05;
+    // Head snap + body wobble (springs)
+    const k = R.yaw * fireMul;
+    D.yaw.v += -D.facing * k;
+    D.roll.v += -(R.roll * fireMul);
+    // Lean-back flinch, then settle
+    SAK.Tween.to(D.pose, { lean: R.lean }, 0.08, SAK.Ease.outCubic);
+    setTimeout(() => SAK.Tween.to(D.pose, { lean: 0 }, 0.35, SAK.Ease.inOutQuad), 140 + R.mouthMs * 0.25);
+    // Yelp mouth
+    D.mouth.scale.set(1, R.mouthY, 1);
+    setTimeout(() => { if (!D.ko) D.mouth.scale.set(1, 1, 1); }, R.mouthMs);
+    // Face squash
+    D.clearHitFX();
+    D.hitFX = {
+      until: time + R.squashDur, dur: R.squashDur,
+      sx: R.sx, sy: R.sy, sz: R.sz,
+      stars: spawnHitStars(D, R.stars)
+    };
+    // Impact FX
+    const cols = fire ? ['#ffd000', '#ff7a00', '#ff3b00', '#fff3a0', ...R.colors] : R.colors;
+    burst(hp, cols, fire ? R.burstN + 12 : R.burstN, fire ? R.burstSpd + 1.2 : R.burstSpd);
+    ring(hp, fire ? '#ffb000' : R.ring);
+    if (tier === 'heavy' || tier === 'perfect') {
+      ring(hp.clone().add(new T.Vector3(0, 0.1, 0)), tier === 'perfect' ? '#ff4fd8' : '#ff9a1f');
+    }
+    shake = Math.max(shake, R.shake + (fire ? 0.18 : 0));
+    D.setDamage(Math.min(0.85, (D.blushMat.opacity / 0.9) + R.blushAdd));
+    // Yelp slightly after contact so the slap "lands" first
+    const yelpTier = tier;
+    setTimeout(() => { if (SAK.Audio && SAK.Audio.yelp) SAK.Audio.yelp(yelpTier); }, (R.yelpDelay || 0) * 1000);
+    return R;
+  }
+
   /**
    * Full slap animation.
    * @param who      'player' | 'kol' (the attacker)
-   * @param opts     { grade:'perfect'|'good'|'weak'|'miss', fire:bool, windup:sec, onImpact:fn }
+   * @param opts     { grade:'perfect'|'good'|'weak'|'miss', fire:bool, dist:number, windup:sec, onImpact:fn }
    */
   async function slap(who, opts) {
     const A = who === 'player' ? player : kol, D = who === 'player' ? kol : player;
     const p = A.pose, E = SAK.Ease;
-    const strength = { perfect: 1.3, good: 1, weak: 0.6, miss: 0.8 }[opts.grade] || 1;
+    const tier = reactTier(opts.grade, opts.fire, opts.dist);
     if (opts.fire) A.setFire(true);
 
     // 1) wind-up: arm out and back, torso twists away
@@ -871,19 +1006,12 @@ SAK.Scene3D = (function () {
     if (opts.grade === 'miss') SAK.Tween.to(D.pose, { lean: -0.32 }, 0.12, E.outCubic); // dodge
     const strike = SAK.Tween.to(p, { lift: 2.25, swing: -2.05, elbow: 0.1, twist: -A.armSide * 0.5, lean: 0.2, lunge: 0.3 }, 0.16, E.inCubic);
     await wait(0.1);
-    if (opts.grade !== 'miss') {
-      const hp = D.headWorld(); hp.x += 0.35; hp.y -= 0.05;
-      // head snaps towards world -x: negative local yaw for the KOL (facing +z),
-      // positive for the player (rotated 180°)
-      const k = 9 * strength * (opts.fire ? 1.6 : 1);
-      D.yaw.v += -D.facing * k;
-      D.roll.v += -k * 0.6;
-      D.mouth.scale.set(1, 3, 1);
-      setTimeout(() => D.mouth.scale.set(1, 1, 1), 350);
-      burst(hp, opts.fire ? ['#ffd000', '#ff7a00', '#ff3b00', '#fff3a0'] : ['#ffffff', '#fff27a', '#ffd23f'], opts.fire ? 34 : Math.round(10 + strength * 10), opts.fire ? 5 : 3.2);
-      ring(hp, opts.fire ? '#ffb000' : '#ffffff');
-      shake = Math.max(shake, 0.12 + strength * 0.12 + (opts.fire ? 0.25 : 0));
+    if (opts.grade !== 'miss' && tier) {
+      const R = applyHitReact(D, tier, !!opts.fire);
+      const hp = D.headWorld();
       if (opts.onImpact) opts.onImpact(hp);
+      // Cartoon hit-stop — longer for heavier tiers
+      if (R.hitStop) await wait(R.hitStop);
     } else if (opts.onImpact) opts.onImpact(null);
     await strike;
     await wait(0.12);
