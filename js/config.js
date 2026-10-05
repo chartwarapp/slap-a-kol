@@ -71,7 +71,7 @@ SAK.UPGRADES = {
  * for `cost` PTS and activates it. Golden Fist also refills 1 free per day. */
 SAK.POWERUPS = {
   fist:   { id: 'fist',   icon: '🔥', name: 'GOLDEN FIST', cost: 150, max: 5,
-            desc: 'Next slap x2.5 and never misses', mult: 2.5, freePerDay: 1 },
+            desc: 'Next landed slap x2.5, never whiffs (kept if braced)', mult: 2.5, freePerDay: 1 },
   helmet: { id: 'helmet', icon: '⛑', name: 'HELMET',      cost: 120, max: 5,
             desc: 'Next 2 slaps you take: -50% dmg', hits: 2, damageMult: 0.5 },
   rage:   { id: 'rage',   icon: '😤', name: 'DEGEN RAGE',  cost: 100, max: 5,

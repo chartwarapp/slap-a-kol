@@ -45,14 +45,15 @@ Haptics use the Vibration API (Android Chrome; iPhone Safari does not support we
 - **Quick Match / online list**: falls back to an **AI stand-in** that locks privately (same scoring rules). Live networked PvP can plug in later without changing the private-meter UX.
 
 ### Economy (all in-game PTS)
-- **Free to play / play-to-earn**: every match pays PTS. A win pays the KOL's `winPts` plus perfect and streak bonuses. A loss still pays participation plus hits landed.
+- **Free to play / play-to-earn**: every match pays PTS. A win pays the KOL's `winPts` plus perfect and streak bonuses. A loss still pays participation plus rounds won.
 - **Optional bet**: wager PTS before a fight. If you win you get `bet × KOL payout` (x1.6 to x3.0) plus bonuses. If you lose, the bet is gone.
 - **Stake Vault 🏦**: lock PTS to earn APR yield (demo-accelerated: 1 real minute ≈ 1 day). Staking also unlocks a **boost tier** (Bronze +10% … Diamond +100%), which multiplies match PTS and bet payouts.
 - **Shop v1 = HEALTH + POWER** permanent upgrades. These buttons sit on the pre-fight screen and are paid in PTS. Costs scale ×1.55 per level, up to level 10.
 - **Power-ups** (limited use, max one of each per fight, bought with PTS when you have none):
-  🔥 **Golden Fist** (next slap x2.5, never misses; 1 free per day) ·
-  ⛑ **Helmet** (next 2 hits taken −50%) ·
-  😤 **Degen Rage** (next 3 slaps +40% dmg, but the meter is 25% faster).
+  🔥 **Golden Fist** (next landed slap x2.5 and never grades as a whiff; stays armed if your attack gets braced, refunded if unused at match end; 1 free per day) ·
+  ⛑ **Helmet** (next 2 slaps that land on you −50%) ·
+  😤 **Degen Rage** (your next 3 attack rounds: +40% dmg, but your meter needle is 25% faster).
+- HP bars show rounds you can still lose before KO (the round loser's bar drops).
 - New players get a 1,000 PTS welcome bonus. A "broke bonus" button shows up if you hit 0, so you can never get stuck.
 
 ### Roster & community

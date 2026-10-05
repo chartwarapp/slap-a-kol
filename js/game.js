@@ -20,7 +20,7 @@
   const fmt = n => Math.round(n).toLocaleString('en-US');
   const ptsHTML = cls => `<span class="pts ${cls || 'sm'}">★</span>`;
   const esc = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };  // local day
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
   const S = SAK.Storage.load();      // persistent save
@@ -274,7 +274,7 @@
         ${k.custom ? '<span class="fan">FAN</span>' : ''}
         ${SAK.avatarSVG(k.look)}
         <div class="kc-name">${esc(k.name)}</div>
-        <div class="kc-stake">${ptsHTML()}+${fmt(k.winPts)}</div>
+        <div class="kc-stake">${ptsHTML()}+${fmt(modePts(k, selectedMode))}</div>
       </button>`).join('') + `
       <button class="kol-card submit-card-btn ${canSubmit ? '' : 'locked'}" id="btn-submit-kol">
         <span class="plus">${canSubmit ? '+' : '🔒'}</span>
@@ -306,7 +306,7 @@
       ${k.custom ? `<button class="kd-remove" id="btn-remove-kol">🗑 Remove fan KOL</button>` : ''}`;
     if ($('#btn-remove-kol')) $('#btn-remove-kol').addEventListener('click', () => removeCustom(k.id));
     if (selectedBet && selectedBet < k.minBet) selectedBet = 0;
-    renderModes($('#mode-row'), selectedMode, m => { selectedMode = m; selectKol(selected, true); });
+    renderModes($('#mode-row'), selectedMode, m => { selectedMode = m; renderPicker(); selectKol(selected, true); });
     renderBets();
     if (Scene) { Scene.setOpponent(k.look); if (!noTaunt) Scene.taunt(); }
     const card = $(`.kol-card[data-i="${i}"]`); if (card) card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -480,7 +480,7 @@
     haptic(30);
     if (id === 'fist') { F.fireArmed = true; A.fire(); if (Scene && F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player') Scene.setFireArmed(true); }
     if (id === 'helmet') { F.pu.helmet = pu.hits; A.brace(); if (Scene) Scene.setHelmet(true); }
-    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player' && MeterLocal) MeterLocal.start((SAK.CHALLENGE.attackerBaseSpeed + (F.kol.difficulty - 1) * 12) * pu.meterMult); }
+    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player' && MeterLocal) MeterLocal.setSpeedMult(pu.meterMult); }
     toast(`${pu.icon} ${pu.name}: ${pu.desc}`);
     renderPowerups(); renderUpgrades();
   }
@@ -496,7 +496,7 @@
     S.upgrades[type]++;
     SAK.Storage.save();
     A.coin(); haptic(20);
-    if (F && !F.started) { F.pMax = playerMaxHp(); F.pHp = F.pMax; renderHp(); }  // applies before 1st slap
+    if (F && !F.started) { F.pMax = playerMaxHp(); F.pHp = F.pMax; renderRoundScore(); }  // applies before 1st slap
     if (btn) {
       const r = btn.getBoundingClientRect(), app = appRect();
       floatText(r.left - app.left + r.width / 2, r.top - app.top, type === 'health' ? `+${SAK.PLAYER.hpPerLevel} HP` : `+${SAK.PLAYER.powerPerLevel} POWER`, 'good');
@@ -511,7 +511,7 @@
     bet = bet || 0;
     const mode = opts.mode || 'classic';
     if (bet > 0) {   // optional bet is escrowed up-front
-      if (bet < kol.minBet) bet = 0;
+      if (bet < kol.minBet && !opts.pvp) bet = 0;   // PvP wagers aren't bound by KOL min bets
       else if (!P.spend(bet)) { toast('Not enough PTS for that bet'); return; }
       else A.coin();
     }
@@ -573,17 +573,18 @@
       // ROUND label = the round in play; it only advances when startChallengeRound() bumps C.round
       // (score may update at resolve, but the label holds through reveal, slap and KO)
       + `<span class="rs-meta">ROUND ${Math.max(1, Math.min(C.round, C.bestOf))} · FIRST TO ${C.winsNeeded}</span>`;
-    // Mirror score onto HP bars so the VS bar still feels alive
-    const pPct = (C.pWins / C.winsNeeded) * 100;
-    const kPct = (C.kWins / C.winsNeeded) * 100;
-    $('#p-hp').style.width = Math.max(8, pPct) + '%';
-    $('#p-hp-lag').style.width = Math.max(8, pPct) + '%';
-    $('#k-hp').style.width = Math.max(8, kPct) + '%';
-    $('#k-hp-lag').style.width = Math.max(8, kPct) + '%';
-    $('#p-hp').classList.toggle('low', C.pWins === 0);
-    $('#k-hp').classList.toggle('low', C.kWins === 0);
-    $('#p-hp-txt').textContent = `${C.pWins} / ${C.winsNeeded}`;
-    $('#k-hp-txt').textContent = `${C.kWins} / ${C.winsNeeded}`;
+    // HP bars = rounds you can still lose before KO: the round LOSER's bar drops
+    const pLeft = Math.max(0, C.winsNeeded - C.kWins), kLeft = Math.max(0, C.winsNeeded - C.pWins);
+    const set = (who, left) => {
+      const pct = left / C.winsNeeded * 100;
+      $(`#${who}-hp`).style.width = pct + '%';
+      $(`#${who}-hp-lag`).style.width = pct + '%';
+      $(`#${who}-hp`).classList.toggle('low', left <= 1);
+      $(`#${who}-hp-txt`).textContent = `${left} / ${C.winsNeeded}`;
+    };
+    set('p', pLeft); set('k', kLeft);
+    if (Scene && Scene.player) Scene.player.setDamage(1 - pLeft / C.winsNeeded);
+    if (Scene && Scene.kol) Scene.kol.setDamage(1 - kLeft / C.winsNeeded);
   }
 
   function stopMeters() {
@@ -653,9 +654,9 @@
     renderRoundScore();
 
     const CH = SAK.CHALLENGE;
-    let speed = CH.attackerBaseSpeed + (F.kol.difficulty - 1) * 12;
-    if (F.pu.rage > 0 && isAtk) speed *= SAK.POWERUPS.rage.meterMult;
-    if (F.fireArmed && Scene && isAtk) Scene.setFireArmed(true);
+    const speed = CH.attackerBaseSpeed + (F.kol.difficulty - 1) * 12;
+    MeterLocal.setSpeedMult(F.pu.rage > 0 && isAtk ? SAK.POWERUPS.rage.meterMult : 1);
+    if (Scene) Scene.setFireArmed(!!(F.fireArmed && isAtk));
 
     // Both roles: jerky unpredictable meter on THIS device only
     MeterLocal.setJerky(true);
@@ -663,10 +664,15 @@
     MeterLocal.start(speed);
 
     scheduleAiPrivateLock();
-    // Soft timeout: auto-whiff any unlocked side so rounds can't hang
+    armRoundTimer();
+  }
+
+  /** Soft timeout: auto-whiff any unlocked side so rounds can't hang (re-arms while Settings is open). */
+  function armRoundTimer() {
     clearTimeout(roundTimer);
     roundTimer = setTimeout(() => {
       if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
+      if (!$('#modal-settings').classList.contains('hidden')) return armRoundTimer();   // paused in settings
       const side = F.challenge.localSide;
       if (!F.challenge.locks[side]) {
         // local timeout → force a bad lock on the visible meter
@@ -860,19 +866,27 @@
     const playerWonRound = playerIsAtk ? attackerWins : !attackerWins;
 
     // Power-up bookkeeping on player-attack rounds
-    let fire = false, rage = false;
+    let fire = false, rage = false, helmet = false;
     if (playerIsAtk) {
-      fire = F.fireArmed;
+      // Golden Fist is only spent when the slap LANDS (stays armed if braced)
+      fire = F.fireArmed && attackerWins;
       if (fire) F.fireArmed = false;
       rage = F.pu.rage > 0;
       if (rage) { F.pu.rage--; if (!F.pu.rage && Scene) Scene.setRage(false); }
-      renderPowerups();
+    } else if (attackerWins && F.pu.helmet > 0) {
+      // Helmet soaks the next 2 slaps that land on you (-50% dmg each)
+      helmet = true;
+      F.pu.helmet--;
+      if (!F.pu.helmet && Scene) Scene.setHelmet(false);
     }
+    renderPowerups();
 
     // Record "damage" flavour numbers for duel-style result copy
-    const grade = attackerWins ? atk.zone : def.zone;
+    let grade = attackerWins ? atk.zone : def.zone;
+    // Golden Fist never whiffs: a landed fist slap grades at least SOLID
+    if (fire && grade.mult < 1) grade = SAK.METER.zones.find(z => z.id === 'good') || grade;
     const basePow = playerIsAtk ? playerPower() : F.kol.power;
-    const dmg = Math.round(basePow * Math.max(0.25, grade.mult) * (fire ? SAK.POWERUPS.fist.mult : 1) * (rage ? SAK.POWERUPS.rage.damageMult : 1));
+    const dmg = Math.round(basePow * Math.max(0.25, grade.mult) * (fire ? SAK.POWERUPS.fist.mult : 1) * (rage ? SAK.POWERUPS.rage.damageMult : 1) * (helmet ? SAK.POWERUPS.helmet.damageMult : 1));
     if (attackerWins) {
       if (playerIsAtk) { F.duel.p = dmg; F.hits++; F.maxHit = Math.max(F.maxHit, dmg); if (grade.id === 'perfect') F.perfects++; }
       else { F.duel.k = dmg; }
@@ -890,18 +904,12 @@
     await showLockReveal(playerWonRound);
 
     const winnerName = playerWonRound ? 'YOU' : F.kol.name;
-    const margin = Math.abs(atkDist - defDist).toFixed(1);
     banner(
-      playerWonRound ? `${winnerName} TAKES IT` : `${winnerName} TAKES IT`,
+      playerWonRound ? 'YOU TAKE IT' : `${winnerName} TAKES IT`,
       playerWonRound ? '#39ff88' : '#ff3b5c',
       900
     );
-    {
-      const app = appRect();
-      floatText(app.width / 2, 200,
-        `ATK ${atkDist.toFixed(0)}° · BRACE ${defDist.toFixed(0)}°${atkDist === defDist ? ' · TIE→ATK' : ` · Δ${margin}°`}`,
-        playerWonRound ? 'good' : 'miss');
-    }
+    // (degrees / margin already shown in the inline reveal — no duplicate float text over the HUD)
 
     // Play slap animation for the round attacker (landed or stuffed)
     const slapWho = C.attacker === 'player' ? 'player' : 'kol';
@@ -924,11 +932,11 @@
         A.brace();
         haptic(25);
         flash('#2ee66b');
-        say(playerWonRound ? 'BRACED TO THE MOON 🛡' : 'STUFFED. NGMI swing.');
+        if (playerWonRound) sayPlayer('BRACED TO THE MOON 🛡'); else say('STUFFED. NGMI swing.');
       }
     };
 
-    if (Scene) await Scene.slap(slapWho, { grade: slapGrade, fire: fire && attackerWins && playerIsAtk, dist: attackerWins ? atk.dist : def.dist, windup: 0.28, landed: attackerWins, onImpact: doImpact });
+    if (Scene) await Scene.slap(slapWho, { grade: slapGrade, fire, dist: attackerWins ? atk.dist : def.dist, windup: 0.28, landed: attackerWins, onImpact: doImpact });
     else { await wait(0.35); doImpact(); }
 
     await wait(0.35);
@@ -983,7 +991,7 @@
       rows.push(['Crab market consolation', PR.lossBase * 2]);
       pts = PR.lossBase * 2;
     } else {
-      rows.push(['Participation', PR.lossBase], [`Hits landed (${F.hits})`, F.hits * PR.perHitLanded]);
+      rows.push(['Participation', PR.lossBase], [`Rounds won (${F.hits})`, F.hits * PR.perHitLanded]);
       pts = PR.lossBase + F.hits * PR.perHitLanded;
     }
     if (boost) rows.push([`Vault boost (${V.tier.name} +${Math.round(boost * 100)}%)`, pts * boost]);
@@ -1016,6 +1024,8 @@
       }
     }
 
+    // An armed Golden Fist that never landed isn't wasted: return the charge
+    if (F.fireArmed) { F.fireArmed = false; S.powerups.fist = Math.min(SAK.POWERUPS.fist.max, (S.powerups.fist || 0) + 1); if (Scene) Scene.setFireArmed(false); }
     if (win) { st.wins++; st.streak++; st.bestStreak = Math.max(st.bestStreak, st.streak); S.beaten[k.id] = true; A.win(); }
     else if (!draw) { st.losses++; st.streak = 0; A.lose(); }
     SAK.Storage.save();
@@ -1237,7 +1247,7 @@
     A.unlock(); A.click();
     $('#set-sound').checked = S.settings.sound;
     $('#set-haptics').checked = S.settings.haptics;
-    $('#btn-forfeit').classList.toggle('hidden', !(screen === 'fight' && F && !['over', 'done'].includes(F.turn)));
+    $('#btn-forfeit').classList.toggle('hidden', !(screen === 'fight' && F && !['over', 'done', 'busy'].includes(F.turn)));
     renderMenu();
     $('#modal-settings').classList.remove('hidden');
   });
@@ -1306,7 +1316,9 @@
     // debug hook for console testing / automated smoke tests
     window.SAK_DEBUG = {
       state: S, get fight() { return F; }, roster, openVault, openSubmit, openPvp, openLeaderboard,
-      startFight: (id, bet, mode) => startFight(roster().find(k => k.id === id) || roster()[0], bet, { mode })
+      startFight: (id, bet, mode) => startFight(roster().find(k => k.id === id) || roster()[0], bet, { mode }),
+      lockAt: angle => lockLocal(true, angle),   // smoke tests: lock local meter at an exact angle
+      get scene() { return Scene; }
     };
   }
   boot();

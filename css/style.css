@@ -182,7 +182,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
   position: relative; left: auto; right: auto; bottom: auto; z-index: 14;
   margin: 0 0 12px; padding: 0 8px; text-align: center; font-size: 34px; color: #fff;
   line-height: 1.05; pointer-events: none; animation: pulse .9s ease-in-out infinite;
-  text-shadow: var(--outline-soft), 0 3px 0 #0008;
+  text-shadow: var(--outline-soft);
 }
 .prompt.kol-turn { color: var(--red); font-size: 30px; animation: none; }
 .taunt {
@@ -307,6 +307,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 /* ---------------------------------------------------------------- modals */
 .modal { position: absolute; inset: 0; z-index: 60; background: #0009; display: grid; place-items: center; padding: 20px; }
 .modal-card { width: 100%; max-width: 360px; background: #fff; color: var(--ink); border-radius: 22px; padding: 18px; display: grid; gap: 10px; border: 4px solid var(--ink); box-shadow: 0 8px 0 #0006; animation: pop .2s; }
+.modal-card > * { min-width: 0; }  /* grid items: let wide rows (chips/lists) scroll instead of stretching the card */
 .modal-card h3 { margin: 0; text-align: center; font-size: 28px; color: var(--ink); text-shadow: none; }
 /* Gradient-top modals: keep white title with thin comic outline only */
 .wallet-card h3, .vault-card h3, .pvp-card h3, .submit-card h3, .lb-card h3 {

@@ -10,7 +10,7 @@ SAK.createMeter = function (el, opts) {
   const CX = 100, CY = 100, R = 78, W = 26;
   let svg, needle, running = false, angle = -90, dir = 1, speed = 150;
   let raf = 0, last = 0, frozen = false, jerky = !!opts.jerky;
-  let nextJerkAt = 0, baseSpeed = 150;
+  let nextJerkAt = 0, baseSpeed = 150, speedMult = 1;
 
   const rad = d => (d - 90) * Math.PI / 180;
   const pt = (d, r) => [CX + r * Math.cos(rad(d)), CY + r * Math.sin(rad(d))];
@@ -81,7 +81,7 @@ SAK.createMeter = function (el, opts) {
         const now = ts / 1000;
         if (now >= nextJerkAt) { applyJerk(); scheduleJerk(now); }
       }
-      angle += dir * speed * dt;
+      angle += dir * speed * speedMult * dt;
       if (angle > 90) { angle = 90 - (angle - 90); dir = -1; }
       if (angle < -90) { angle = -90 + (-90 - angle); dir = 1; }
       render();
@@ -99,6 +99,8 @@ SAK.createMeter = function (el, opts) {
   return {
     el,
     setJerky(v) { jerky = !!v; },
+    /** Scale needle speed on top of the jerky jumps (e.g. Degen Rage +25%). */
+    setSpeedMult(m) { speedMult = m > 0 ? m : 1; },
     /** Start swinging at `degPerSec` (base). Jerky mode overrides with random jumps. */
     start(degPerSec) {
       baseSpeed = degPerSec || 150;
