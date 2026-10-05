@@ -6,9 +6,10 @@
  * Upgrades / Golden Fist cost PTS. Wallet connect is a mock Solana
  * placeholder. Roster = built-in parody KOLs + user-submitted KOLs.
  *
- * Fight loop (dual-meter challenge):
- *   Each ROUND: attacker (jerky meter) + defender (brace meter) lock together.
- *   Closer to the green centre wins the exchange. Tie → attacker edge.
+ * Fight loop (private per-device meter):
+ *   Each ROUND: local player sees ONLY their meter (ATTACK or BRACE), jerky
+ *   on both roles. Opponent locks privately (AI / other phone — never shown).
+ *   Closer to the green centre wins. Tie → attacker edge.
  *   Quick Duel = best of 3 · Classic = best of 5. Then KO fly-off → result.
  * ========================================================================= */
 (function () {
@@ -25,7 +26,7 @@
   const S = SAK.Storage.load();      // persistent save
   const W = SAK.Wallet, A = SAK.Audio, P = SAK.Points, V = SAK.Vault;
   let Scene = null;                  // SAK.Scene3D once WebGL is up
-  let MeterAtk = null, MeterDef = null;  // dual meters
+  let MeterLocal = null;                 // private per-device meter (local player only)
   let aiLockTimer = 0, roundTimer = 0;
 
   /* ----------------------------------------------------------- derived stats */
@@ -451,7 +452,7 @@
     haptic(30);
     if (id === 'fist') { F.fireArmed = true; A.fire(); if (Scene && F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player') Scene.setFireArmed(true); }
     if (id === 'helmet') { F.pu.helmet = pu.hits; A.brace(); if (Scene) Scene.setHelmet(true); }
-    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player' && MeterAtk) MeterAtk.start((SAK.CHALLENGE.attackerBaseSpeed + (F.kol.difficulty - 1) * 12) * pu.meterMult); }
+    if (id === 'rage') { F.pu.rage = pu.slaps; A.fire(); if (Scene) Scene.setRage(true); if (F.turn === 'challenge' && F.challenge && F.challenge.attacker === 'player' && MeterLocal) MeterLocal.start((SAK.CHALLENGE.attackerBaseSpeed + (F.kol.difficulty - 1) * 12) * pu.meterMult); }
     toast(`${pu.icon} ${pu.name}: ${pu.desc}`);
     renderPowerups(); renderUpgrades();
   }
@@ -490,7 +491,6 @@
     clearTimeout(aiLockTimer);
     const bestOf = (SAK.MODES[mode] && SAK.MODES[mode].bestOf) || (mode === 'duel' ? 3 : 5);
     const winsNeeded = Math.ceil(bestOf / 2);
-    const localPvp = !!opts.localPvp;
     F = {
       kol, bet, hits: 0,
       pMax: playerMaxHp(), pHp: playerMaxHp(),
@@ -501,12 +501,13 @@
       pu: { used: {}, helmet: 0, rage: 0 },
       brace: null,
       mode, duel: { p: null, k: null }, opts,
-      localPvp,
+      localPvp: false,   // hotseat dual-UI removed — private meter only
       challenge: {
         bestOf, winsNeeded,
         pWins: 0, kWins: 0,
         round: 0,
         attacker: 'player',   // who attacks this round
+        localSide: 'atk',     // this device's role this round: 'atk' | 'def'
         locks: { atk: null, def: null },
         resolving: false
       }
@@ -514,10 +515,10 @@
     $('#duel-score') && $('#duel-score').remove();
     if (Scene) { Scene.setOpponent(kol.look); Scene.resetFight(); }
     $('#p-portrait').innerHTML = SAK.avatarSVG(playerLook());
-    $('#p-name').textContent = localPvp ? 'P1 · ' + profile().name : profile().name;
+    $('#p-name').textContent = profile().name;
     $('#k-portrait').innerHTML = SAK.avatarSVG(kol.look);
-    $('#k-name').textContent = localPvp ? 'P2 · ' + kol.name : kol.name;
-    const tag = localPvp ? 'LOCAL 1v1' : (kol.pvp ? 'PVP · AI' : (kol.custom ? 'FAN KOL' : 'LEVEL ' + kol.level));
+    $('#k-name').textContent = kol.name;
+    const tag = kol.pvp ? 'PVP · PRIVATE' : (kol.custom ? 'FAN KOL' : 'LEVEL ' + kol.level);
     $('#fight-level').textContent = tag;
     const M = SAK.MODES[mode];
     $('#stake-tag').innerHTML = `${M.icon} ${M.label} · Bo${bestOf} · ` + (bet
@@ -526,6 +527,7 @@
     $('#upgrade-bar').classList.remove('gone');
     $('#taunt').classList.add('hidden'); $('#p-taunt').classList.add('hidden');
     $('#brace').classList.add('hidden');
+    setWaitUI(false);
     renderHp(true); renderUpgrades(); renderPowerups(); renderRoundScore();
     if (Scene) { Scene.setHelmet(false); Scene.setRage(false); }
     show('fight');
@@ -557,26 +559,25 @@
   function stopMeters() {
     clearTimeout(aiLockTimer);
     clearTimeout(roundTimer);
-    if (MeterAtk) MeterAtk.stop();
-    if (MeterDef) MeterDef.stop();
+    if (MeterLocal) MeterLocal.stop();
   }
 
-  function playerControls(side) {
-    // side: 'atk' | 'def'
-    if (!F) return false;
-    if (F.localPvp) return true; // both humans — either can tap their panel
-    const atkIsPlayer = F.challenge.attacker === 'player';
-    return side === 'atk' ? atkIsPlayer : !atkIsPlayer;
+  function makeLockResult(angle) {
+    const a = Math.max(-90, Math.min(90, angle));
+    const abs = Math.abs(a);
+    const zone = SAK.METER.zones.find(z => abs <= z.maxAngle) || SAK.METER.zones[SAK.METER.zones.length - 1];
+    return { zone, angle: a, dist: abs, already: false };
   }
 
-  function whoLabel(side) {
-    const atkIsPlayer = F.challenge.attacker === 'player';
-    if (F.localPvp) {
-      if (side === 'atk') return atkIsPlayer ? 'P1 · TAP / A' : 'P2 · TAP / L';
-      return atkIsPlayer ? 'P2 · TAP / L' : 'P1 · TAP / A';
-    }
-    if (side === 'atk') return atkIsPlayer ? 'YOU · TAP / A' : 'AI ATTACKING…';
-    return atkIsPlayer ? 'AI BRACING…' : 'YOU · TAP / L';
+  function localSide() {
+    return F && F.challenge ? F.challenge.localSide : 'atk';
+  }
+
+  function setWaitUI(on, msg) {
+    const w = $('#meter-wait');
+    if (!w) return;
+    w.classList.toggle('hidden', !on);
+    if (msg) w.textContent = msg;
   }
 
   function startChallengeRound() {
@@ -587,48 +588,60 @@
     C.resolving = false;
     // Alternate attacker: round 1 player, round 2 opponent, …
     C.attacker = (C.round % 2 === 1) ? 'player' : 'kol';
+    C.localSide = C.attacker === 'player' ? 'atk' : 'def';
     F.turn = 'challenge';
     F.started = true;
     F.slaps++;
     $('#upgrade-bar').classList.add('gone');
     $('#brace').classList.add('hidden');
 
-    const atkName = C.attacker === 'player' ? (F.localPvp ? 'P1' : profile().name) : (F.localPvp ? 'P2' : F.kol.name);
-    const p = $('#prompt');
-    p.textContent = `ROUND ${C.round} · ${atkName.toUpperCase()} ATTACKS`;
-    p.classList.toggle('kol-turn', C.attacker !== 'player');
-    p.classList.remove('hidden');
+    const isAtk = C.localSide === 'atk';
+    const roleEl = $('#role-label');
+    roleEl.textContent = isAtk ? '🥊 ATTACK' : '🛡 BRACE';
+    roleEl.className = 'meter-role ' + (isAtk ? 'atk-role' : 'def-role');
+    const panel = $('#panel-local');
+    panel.classList.remove('locked');
+    panel.classList.add('you-control');
+    panel.classList.toggle('role-atk', isAtk);
+    panel.classList.toggle('role-def', !isAtk);
+    $('#hint-local').textContent = isAtk ? 'TAP / SPACE TO SLAP-LOCK' : 'TAP / SPACE TO BRACE-LOCK';
+    $('#hint-local').classList.remove('dim');
+    setWaitUI(false);
 
-    $('#hint-atk').textContent = whoLabel('atk');
-    $('#hint-def').textContent = whoLabel('def');
-    $('#hint-atk').classList.toggle('dim', !playerControls('atk'));
-    $('#hint-def').classList.toggle('dim', !playerControls('def'));
-    $('#panel-atk').classList.toggle('you-control', playerControls('atk'));
-    $('#panel-def').classList.toggle('you-control', playerControls('def'));
-    $('#panel-atk').classList.remove('locked');
-    $('#panel-def').classList.remove('locked');
+    const atkName = C.attacker === 'player' ? profile().name : F.kol.name;
+    const p = $('#prompt');
+    p.textContent = isAtk
+      ? `ROUND ${C.round} · YOUR ATTACK`
+      : `ROUND ${C.round} · BRACE vs ${F.kol.name.toUpperCase()}`;
+    p.classList.toggle('kol-turn', !isAtk);
+    p.classList.remove('hidden');
 
     renderRoundScore();
 
     const CH = SAK.CHALLENGE;
-    let atkSpeed = CH.attackerBaseSpeed + (F.kol.difficulty - 1) * 12;
-    if (F.pu.rage > 0 && C.attacker === 'player') atkSpeed *= SAK.POWERUPS.rage.meterMult;
-    if (F.fireArmed && Scene && C.attacker === 'player') Scene.setFireArmed(true);
+    let speed = CH.attackerBaseSpeed + (F.kol.difficulty - 1) * 12;
+    if (F.pu.rage > 0 && isAtk) speed *= SAK.POWERUPS.rage.meterMult;
+    if (F.fireArmed && Scene && isAtk) Scene.setFireArmed(true);
 
-    MeterAtk.setJerky(true);
-    MeterDef.setJerky(false);
-    MeterAtk.unfreeze(); MeterDef.unfreeze();
-    MeterAtk.start(atkSpeed);
-    MeterDef.start(CH.defenderSpeed);
+    // Both roles: jerky unpredictable meter on THIS device only
+    MeterLocal.setJerky(true);
+    MeterLocal.unfreeze();
+    MeterLocal.start(speed);
 
-    // Schedule AI lock(s) for any side the human doesn't control
-    scheduleAiLocks();
+    scheduleAiPrivateLock();
     // Soft timeout: auto-whiff any unlocked side so rounds can't hang
     clearTimeout(roundTimer);
     roundTimer = setTimeout(() => {
       if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
-      if (!F.challenge.locks.atk) lockSide('atk', true, (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
-      if (!F.challenge.locks.def) lockSide('def', true, (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
+      const side = F.challenge.localSide;
+      if (!F.challenge.locks[side]) {
+        // local timeout → force a bad lock on the visible meter
+        lockLocal(true, (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
+      }
+      const aiSide = side === 'atk' ? 'def' : 'atk';
+      if (!F.challenge.locks[aiSide]) {
+        lockOpponentPrivate((Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 25));
+      }
     }, (SAK.CHALLENGE.windowMs || 4500));
   }
 
@@ -650,51 +663,60 @@
     return Math.max(-88, Math.min(88, ang));
   }
 
-  function scheduleAiLocks() {
+  /** AI (or future networked opponent) locks WITHOUT a visible needle on this device. */
+  function scheduleAiPrivateLock() {
     clearTimeout(aiLockTimer);
-    if (!F || F.localPvp) return; // both humans
+    if (!F) return;
     const CH = SAK.CHALLENGE;
     const [d0, d1] = CH.aiLockDelay || [0.55, 1.35];
     const delay = (d0 + Math.random() * (d1 - d0)) * 1000;
+    const aiIsAttacker = F.challenge.attacker !== 'player';
     aiLockTimer = setTimeout(() => {
       if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
-      const atkIsPlayer = F.challenge.attacker === 'player';
       const acc = F.kol.accuracy || 0.5;
-      // AI locks the side(s) it controls
-      if (!atkIsPlayer && !F.challenge.locks.atk) {
-        lockSide('atk', true, aiTargetAngle(acc, true));
-      }
-      if (atkIsPlayer && !F.challenge.locks.def) {
-        // slight extra delay feel for brace
-        setTimeout(() => {
-          if (!F || F.turn !== 'challenge' || F.challenge.locks.def) return;
-          lockSide('def', true, aiTargetAngle(acc * 0.95, false));
-        }, 180 + Math.random() * 420);
-      }
-      // If AI is attacker, also schedule defender (player) — already human.
-      // If player is attacker, AI only braces (above).
-      // If AI is attacker we locked atk; player braces manually.
+      const ang = aiTargetAngle(aiIsAttacker ? acc : acc * 0.95, aiIsAttacker);
+      lockOpponentPrivate(ang);
     }, delay);
-
-    // When AI is attacker, lock attack after delay (handled above).
-    // When player is attacker, only brace is AI — handled above.
-    // Also: if AI is attacker we need the atk lock — the condition !atkIsPlayer covers it.
   }
 
-  function lockSide(side, fromAi, forcedAngle) {
+  function lockOpponentPrivate(forcedAngle) {
     if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
     const C = F.challenge;
+    const aiSide = C.localSide === 'atk' ? 'def' : 'atk';
+    if (C.locks[aiSide]) return;
+    C.locks[aiSide] = makeLockResult(forcedAngle);
+    // Never reveal opponent needle — only a private status ping if local already locked
+    if (C.locks[C.localSide]) {
+      setWaitUI(true, 'OPPONENT LOCKED · REVEALING…');
+      resolveChallengeRound();
+    }
+  }
+
+  function lockLocal(fromTimeout, forcedAngle) {
+    if (!F || F.turn !== 'challenge' || F.challenge.resolving) return;
+    const C = F.challenge;
+    const side = C.localSide;
     if (C.locks[side]) return;
-    const meter = side === 'atk' ? MeterAtk : MeterDef;
-    const result = (fromAi && forcedAngle != null)
-      ? meter.forceLock(forcedAngle)
-      : meter.lock();
+    let result;
+    if (fromTimeout && forcedAngle != null) {
+      result = MeterLocal.forceLock(forcedAngle);
+    } else {
+      result = MeterLocal.lock();
+    }
     if (result.already) return;
     C.locks[side] = result;
-    $(side === 'atk' ? '#panel-atk' : '#panel-def').classList.add('locked');
+    $('#panel-local').classList.add('locked');
+    $('#hint-local').classList.add('dim');
     A.click();
     haptic(18);
-    if (C.locks.atk && C.locks.def) resolveChallengeRound();
+
+    const aiSide = side === 'atk' ? 'def' : 'atk';
+    if (C.locks[aiSide]) {
+      setWaitUI(true, 'BOTH LOCKED · REVEALING…');
+      resolveChallengeRound();
+    } else {
+      setWaitUI(true, 'LOCKED · OPPONENT LOCKING PRIVATELY…');
+    }
   }
 
   async function resolveChallengeRound() {
@@ -703,6 +725,7 @@
     F.turn = 'busy';
     clearTimeout(aiLockTimer);
     stopMeters();
+    setWaitUI(false);
     $('#prompt').classList.add('hidden');
 
     const C = F.challenge;
@@ -744,9 +767,7 @@
     if (playerWonRound) C.pWins++; else C.kWins++;
     renderRoundScore();
 
-    const winnerName = playerWonRound
-      ? (F.localPvp ? 'P1' : 'YOU')
-      : (F.localPvp ? 'P2' : F.kol.name);
+    const winnerName = playerWonRound ? 'YOU' : F.kol.name;
     const margin = Math.abs(atkDist - defDist).toFixed(1);
     banner(
       playerWonRound ? `${winnerName} TAKES IT` : `${winnerName} TAKES IT`,
@@ -797,11 +818,10 @@
     startChallengeRound();
   }
 
-  /* --- power-up rage mid-round meter bump --------------------------------- */
-  // (usePowerup still references Meter — patched below to MeterAtk)
+  /* --- power-up rage mid-round meter bump handled in usePowerup ------------ */
 
   /* --- legacy stubs (brace ring retired) ---------------------------------- */
-  function tryBrace() { /* dual-meter replaced brace ring */ }
+  function tryBrace() { /* private meter replaced brace ring */ }
 
   /* --- knockout & results ------------------------------------------------- */
   async function knockout(loser) {
@@ -888,7 +908,7 @@
          <div class="result-sub">${sub(pick(C.winSubs))}${F.challenge ? ` · ${F.challenge.pWins}–${F.challenge.kWins} (Bo${F.challenge.bestOf})` : ''}</div>`
       : `<div class="result-title">${pick(C.loseTitles)}</div>
          ${SAK.avatarSVG(playerLook(), { ko: true, blush: true })}
-         <div class="result-sub">${sub(pick(C.loseSubs))}${F.challenge ? ` · ${F.challenge.pWins}–${F.challenge.kWins} (Bo${F.challenge.bestOf})` : ''}<br><small>Tip: ride the jerky attack meter into the ★ — closer wins the round</small></div>`;
+         <div class="result-sub">${sub(pick(C.loseSubs))}${F.challenge ? ` · ${F.challenge.pWins}–${F.challenge.kWins} (Bo${F.challenge.bestOf})` : ''}<br><small>Tip: ride your jerky meter into the ★ — closer than opponent wins the round</small></div>`;
     html += `<div class="breakdown">
         <div class="bd-head">PLAY-TO-EARN</div>
         ${rows.map(([l, v]) => `<div><span>${l}</span><b>+${fmt(v)}</b></div>`).join('')}
@@ -917,7 +937,7 @@
     card.className = 'result-card ' + (win ? 'win' : 'lose');
     card.innerHTML = html;
     show('result');
-    $('#r-rematch').onclick = () => startFight(k, reBet, { mode: F.mode, localPvp: F.localPvp, pvp: F.opts && F.opts.pvp });
+    $('#r-rematch').onclick = () => startFight(k, reBet, { mode: F.mode, pvp: F.opts && F.opts.pvp });
     if ($('#r-next')) $('#r-next').onclick = () => { selectedBet = 0; openPicker(idx + 1); };
     $('#r-pick').onclick = () => { if (k.pvp) { show('menu'); menuScene(); openPvp(); } else openPicker(); };
     $('#r-menu').onclick = () => { show('menu'); menuScene(); };
@@ -1059,72 +1079,24 @@
     $('#pvp-lobby').classList.remove('hidden'); $('#pvp-search').classList.add('hidden');
   });
 
-  function localP2Opponent() {
-    const P2 = SAK.UGC.palettes;
-    const pickC = a => a[Math.floor(Math.random() * a.length)];
-    const name = 'P2_DEGEN';
-    return Object.assign({
-      id: 'local_p2', name, handle: '@p2_hotseat', level: 'PVP', pvp: true, localPvp: true,
-      tagline: 'Same-device rival. Split meters. No mercy.',
-      look: { skin: pickC(P2.skin), shirt: pickC(P2.shirt), hair: pickC(P2.hair), pants: '#2a2a40', accessory: 'shades', accent: '#ff1a1a' },
-      taunts: ['pass the phone, ser', 'my brace is diamond hands', 'ratio + braced', 'touch grass after this L']
-    }, SAK.customKolStats(3));
-  }
-
-  $('#pvp-local').addEventListener('click', () => {
-    A.click();
-    $('#modal-pvp').classList.add('hidden');
-    startFight(localP2Opponent(), pvpWager, { mode: pvpMode, localPvp: true, pvp: true });
-  });
-
-  /* --- input: dual-meter challenge locks --------------------------------- */
-  function sideFromEvent(e) {
-    if (!e) return null;
-    const t = e.target;
-    if (t && t.closest) {
-      if (t.closest('#panel-atk')) return 'atk';
-      if (t.closest('#panel-def')) return 'def';
-    }
-    if (e.clientX != null) {
-      const r = $('#screen-fight').getBoundingClientRect();
-      return (e.clientX - r.left) < r.width / 2 ? 'atk' : 'def';
-    }
-    return null;
-  }
-
+  /* --- input: private local meter lock ----------------------------------- */
   function onTap(e) {
     if (screen !== 'fight' || !F) return;
     if (e && e.target && e.target.closest && e.target.closest('button, .modal, .pu-rail, .upgrade-bar')) return;
     if (!$('#modal-settings').classList.contains('hidden')) return;
     if (F.turn !== 'challenge') return;
     A.unlock();
-    let side = sideFromEvent(e);
-    if (!F.localPvp) {
-      if (playerControls('atk') && !playerControls('def')) side = 'atk';
-      else if (playerControls('def') && !playerControls('atk')) side = 'def';
-    }
-    if (!side) return;
-    if (!playerControls(side)) {
-      toast("That's their meter 👀");
-      return;
-    }
-    lockSide(side, false);
+    lockLocal(false);
   }
   $('#screen-fight').addEventListener('pointerdown', onTap);
   window.addEventListener('keydown', e => {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
     if (screen !== 'fight' || !F) return;
     if (F.turn === 'challenge') {
-      if (e.code === 'KeyA' || e.code === 'ArrowLeft') { e.preventDefault(); if (playerControls('atk')) lockSide('atk', false); return; }
-      if (e.code === 'KeyL' || e.code === 'ArrowRight') { e.preventDefault(); if (playerControls('def')) lockSide('def', false); return; }
-      if (e.code === 'Space' || e.code === 'Enter') {
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyA' || e.code === 'KeyL'
+          || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
         e.preventDefault();
-        if (!F.localPvp) {
-          if (playerControls('atk')) lockSide('atk', false);
-          else if (playerControls('def')) lockSide('def', false);
-        } else {
-          toast('Hotseat: A / left = ATTACK · L / right = BRACE');
-        }
+        lockLocal(false);
         return;
       }
     }
@@ -1186,8 +1158,7 @@
       setTimeout(() => toast(`🎁 Welcome! +${fmt(SAK.POINTS.welcomeBonus)} PTS to get slapping`, 2600), 600);
     }
     lastSlots = ugcSlotsUnlocked();
-    MeterAtk = SAK.createMeter($('#meter-atk'), { jerky: true, label: '' });
-    MeterDef = SAK.createMeter($('#meter-def'), { jerky: false, label: '' });
+    MeterLocal = SAK.createMeter($('#meter-local'), { jerky: true, label: '' });
     SAK.Meter.build($('#meter')); // legacy hidden mount
     buildTicker();
     try {

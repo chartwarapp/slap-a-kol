@@ -18,25 +18,26 @@ You don't need a build step. It's plain static HTML/CSS/JS, and Three.js r158 is
 | Zip to send to friends | `npm run zip` → `dist/slap-a-kol.zip` (unzip → open `index.html`) |
 | Any static host later | upload the folder as-is (Netlify drop, Vercel, GitHub Pages, S3…) |
 
-Controls: **tap / click** the meter you control (or **A / ←** = attack, **L / →** = brace). Keys **F / H / R** = Golden Fist / Helmet / Degen Rage.
+Controls: **tap / click** (or **Space / Enter / A / L**) to lock **your** meter. Keys **F / H / R** = Golden Fist / Helmet / Degen Rage.
 
 ## How to play
 
 1. **Create your fighter**: name, colour, catchphrase. You show up on the LEFT in every fight.
 2. **SEND IT (free play)** or **⚔ Challenge a player**: pick a mode, optionally bet PTS.
-3. **Dual-meter rounds**: both meters run at once.
-   - **🥊 ATTACK** (left): jerky / unpredictable needle speed — harder to nail the green ★.
-   - **🛡 BRACE** (right): tap-to-lock timing meter (same green centre for fairness).
-4. **Closer to the centre of the green zone wins the round** (accuracy advantage). Equal distance → **attacker wins** (tie-break).
-5. Roles alternate each round (P1 attacks round 1, then braces round 2, …). Match ends when someone hits the wins-needed score. KO fly-off + PTS result screen.
+3. **Private meter (per device)**: you only see **your** needle this round.
+   - Role label: **🥊 ATTACK** or **🛡 BRACE** (roles alternate each round).
+   - Both roles use the **jerky / unpredictable** needle — same green ★ fairness.
+   - Opponent locks **privately** (you never see their needle until the round resolves).
+4. **Closer to the centre of the green zone wins the round**. Equal distance → **attacker wins** (tie-break).
+5. Match ends when someone hits the wins-needed score. KO fly-off + PTS result screen.
 
 ### Modes
 - **⚡ Quick Duel**: **best of 3** (first to 2). Pays ½ PTS.
-- **🥊 Classic KO**: **best of 5** (first to 3) challenge format (same dual-meter rules).
+- **🥊 Classic KO**: **best of 5** (first to 3) — same private-meter rules.
 
 ### Soft-launch PvP
-- **LOCAL 1v1 (same device)**: hotseat / split controls — left meter = attack, right meter = brace. Pass the phone or sit side-by-side.
-- **Quick Match / online list**: still falls back to an **AI stand-in** that plays the same dual-meter rules so solo practice feels real.
+- UX is **my phone only** — one full-width private meter.
+- **Quick Match / online list**: falls back to an **AI stand-in** that locks privately (same scoring rules). Live networked PvP can plug in later without changing the private-meter UX.
 
 ### Economy (all in-game PTS)
 - **Free to play / play-to-earn**: every match pays PTS. A win pays the KOL's `winPts` plus perfect and streak bonuses. A loss still pays participation plus hits landed.
@@ -61,9 +62,9 @@ Controls: **tap / click** the meter you control (or **A / ←** = attack, **L / 
 
 | Real (works now) | Mocked / stubbed |
 |---|---|
-| 3D fight, dual meters, round scoring, KO physics, coin rain | Wallet connect (fake base58 address, no keys) |
+| 3D fight, private meter, round scoring, KO physics, coin rain | Wallet connect (fake base58 address, no keys) |
 | PTS economy, bets, staking yield and tiers, upgrades, power-ups | Online PvP matchmaking (AI stand-in fallback) |
-| Local hotseat 1v1 (dual-meter Bo3/Bo5) | Live networked PvP |
+| Private per-device meter UX (Bo3/Bo5) | Live networked PvP |
 | localStorage persistence (key `slapakol.save.v1`) | Leaderboards (local + simulated players) |
 | User-submitted KOLs + player fighter | Moderation (client-side blocklist only) |
 | WebAudio synth SFX, haptics (mobile) | Pump/dump ticker and chart billboards (random) |
@@ -86,13 +87,15 @@ js/leaderboard.js   local global board + friends stub
 js/audio.js         WebAudio synth SFX
 js/avatars.js       procedural SVG portraits
 js/scene3d.js       Three.js arena, low-poly fighters, slap/KO animations, crypto props
-js/meter.js         semicircle SVG power meters (multi-instance + jerky attack)
-js/game.js          game controller / dual-meter challenge state machine / UI wiring
+js/meter.js         semicircle SVG power meter (jerky for ATTACK + BRACE)
+js/game.js          game controller / private-meter challenge state machine / UI wiring
 ```
 
-### Dual-meter challenge rules (locked)
-- Shared green-centre fairness: attack + brace meters use the same zone geometry.
-- Attack meter: random jerky speed / direction changes (`SAK.CHALLENGE` in `config.js`).
+### Private-meter challenge rules (locked)
+- Each device shows only the local player's meter (ATTACK or BRACE).
+- Shared green-centre fairness: same zone geometry for both roles.
+- Both roles: random jerky speed / direction changes (`SAK.CHALLENGE` in `config.js`).
+- Opponent lock is private until resolve — then distances / winner are shown.
 - Score each exchange by `|needleAngle|` distance from centre — **closer wins**.
 - **Tie-break: attacker wins** when distances are equal.
 - Quick Duel = Bo3 · Classic = Bo5.
@@ -119,7 +122,7 @@ The UI only talks to small interfaces, so going on-chain means swapping implemen
 
 ## Known gaps
 
-- Online PvP is still simulated (local hotseat is real dual-meter; leaderboards are local).
+- Online PvP is still simulated (AI stand-in locks privately; leaderboards are local).
 - No real moderation of user-submitted KOLs (client-side only).
 - Saves are per-browser (localStorage), and nothing syncs between devices.
 - 3D is tuned for phones and laptops. Very old devices may need a lower pixel ratio (`renderer.setPixelRatio` in `scene3d.js`).

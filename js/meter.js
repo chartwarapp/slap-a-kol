@@ -1,7 +1,7 @@
 /* =========================================================================
  * Semi-circular power meter (SVG). Red → orange → yellow → green (centre).
- * Multi-instance factory: attack meters can run JERKY unpredictable speed.
- * lock() returns zone + distance-from-center for dual-meter challenge scoring.
+ * Multi-instance factory: jerky unpredictable speed for ATTACK and BRACE.
+ * lock() returns zone + distance-from-center for private-meter scoring.
  * ========================================================================= */
 window.SAK = window.SAK || {};
 

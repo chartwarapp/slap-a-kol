@@ -1,11 +1,11 @@
 /* =========================================================================
- * Matchmaking — soft-launch stub + local hotseat.
+ * Matchmaking — soft-launch stub (private per-device meters).
  * -------------------------------------------------------------------------
  * Design target: live player-vs-player challenges with an optional PTS wager.
  * Soft launch:
- *   - LOCAL 1v1 (same device) is the real dual-meter PvP path (see game.js)
+ *   - Each device shows only the local player's meter (ATTACK or BRACE).
  *   - Online search lists fake "online" players, pretends to wait, then
- *     falls back to an AI stand-in that uses the SAME dual-meter rules.
+ *     falls back to an AI stand-in that locks privately (same scoring rules).
  *
  * Later: replace listOnline() / findMatch() with a realtime backend
  * (WebSocket / Supabase Realtime / Colyseus). The server should own the RNG,
@@ -33,11 +33,11 @@ SAK.Matchmaking = (function () {
     };
   }
 
-  /** Turn a player profile into an AI opponent ("stand-in") for dual-meter fights. */
+  /** Turn a player profile into an AI opponent ("stand-in") for private-meter fights. */
   function standIn(p) {
     return Object.assign({
       id: 'pvp_' + p.name, name: p.name, handle: '@' + p.name, level: 'PVP', pvp: true,
-      tagline: `${p.rank} · ${p.winRate}% win rate — AI stand-in (dual-meter rules)`,
+      tagline: `${p.rank} · ${p.winRate}% win rate — AI stand-in (private meter)`,
       look: p.look,
       taunts: ['gm. prepare to get slapped.', 'ratio + slapped', 'my cheeks have diamond hands', 'imagine losing to an AI stand-in lol']
     }, SAK.customKolStats(Math.min(5, p.difficulty)));
@@ -60,7 +60,7 @@ SAK.Matchmaking = (function () {
         const tick = () => {
           if (cancelled) return;
           if (i < steps.length) { onStatus && onStatus(steps[i++], false); timer = setTimeout(tick, 1100); }
-          else { onStatus && onStatus('🤖 AI stand-in deployed. Dual-meter rules. SEND IT!', true); timer = setTimeout(() => !cancelled && resolve({ live: false, opponent: standIn(target) }), 800); }
+          else { onStatus && onStatus('🤖 AI stand-in deployed. Private meters. SEND IT!', true); timer = setTimeout(() => !cancelled && resolve({ live: false, opponent: standIn(target) }), 800); }
         };
         tick();
       });

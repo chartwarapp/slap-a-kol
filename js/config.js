@@ -100,20 +100,21 @@ SAK.METER = {
  * On loss the bet (escrowed when the fight starts) is forfeited. */
 SAK.REWARDS = { perfectBonus: 0.05, perfectBonusCap: 5, streakBonus: 0.05, streakBonusCap: 5 };
 
-/* ---- Match modes (dual-meter challenge) ---------------------------------
+/* ---- Match modes (private per-device meter) ------------------------------
  * classic : best of 5 round challenges (first to 3).
  * duel    : best of 3 round challenges (first to 2).
- * Each round: attacker + defender meters lock at the same time; closer to
- * the green centre wins the exchange.                                     */
+ * Each round: each player only sees THEIR meter (ATTACK or BRACE); both use
+ * jerky speed. Closer to the green centre wins the exchange.              */
 SAK.MODES = {
   classic: { id: 'classic', label: 'CLASSIC KO', icon: '🥊', desc: 'Best of 5 · closer to green wins each round', ptsMult: 1, bestOf: 5 },
   duel:    { id: 'duel',    label: 'QUICK DUEL', icon: '⚡', desc: 'Best of 3 · closer to green wins each round', ptsMult: 0.5, bestOf: 3 }
 };
 
-/* Dual-meter challenge tuning. Tie-break: attacker wins when equally close. */
+/* Private-meter challenge tuning. Tie-break: attacker wins when equally close.
+ * Both ATTACK and BRACE use jerky unpredictable speed on each device. */
 SAK.CHALLENGE = {
   tieBreak: 'attacker',          // equal dist → attacker takes the round
-  defenderSpeed: 145,            // deg/s (smooth brace meter)
+  defenderSpeed: 170,            // seed for brace (also jerky; kept for tuning)
   attackerBaseSpeed: 170,        // seed speed before jerky jumps
   jerkyMin: 70,
   jerkyMax: 340,
@@ -131,8 +132,8 @@ SAK.COPY = {
   missTaunts: ['NGMI with that aim 😜', 'Paper-handed swing, ser.', 'Was that a slap or a gm?', 'Skill issue. 📉']
 };
 
-/* Legacy brace ring (kept for reference). Dual-meter challenge replaced it:
- * defender locks their own meter; closer-to-centre decides the round. */
+/* Legacy brace ring (kept for reference). Private per-device meter replaced it:
+ * each player locks their own meter; closer-to-centre decides the round. */
 SAK.BRACE = { window: 0.28, damageMult: 0.5 };
 
 /* ---- KOL roster lives in js/roster.js (easy to edit) ---------------- */
