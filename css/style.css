@@ -178,8 +178,11 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 .stake-tag { position: absolute; top: calc(124px + var(--safe-top)); left: 50%; transform: translateX(-50%); font-size: 13px; background: #1a0b3a99; padding: 3px 10px; border-radius: 10px; display: flex; gap: 5px; align-items: center; white-space: nowrap; }
 
 .prompt {
-  position: absolute; left: 0; right: 0; bottom: calc(158px + var(--safe-bot)); text-align: center; font-size: 34px; color: #fff;
-  pointer-events: none; animation: pulse .9s ease-in-out infinite;
+  /* Flows above .private-meter inside .bottom-zone — never under the panel */
+  position: relative; left: auto; right: auto; bottom: auto; z-index: 14;
+  margin: 0 0 12px; padding: 0 8px; text-align: center; font-size: 34px; color: #fff;
+  line-height: 1.05; pointer-events: none; animation: pulse .9s ease-in-out infinite;
+  text-shadow: var(--outline-soft), 0 3px 0 #0008;
 }
 .prompt.kol-turn { color: var(--red); font-size: 30px; animation: none; }
 .taunt {
@@ -188,7 +191,11 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 }
 @keyframes pop { from { transform: scale(.3); opacity: 0; } }
 
-.bottom-zone { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 10px calc(4px + var(--safe-bot)); }
+.bottom-zone {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 12;
+  padding: 0 10px calc(4px + var(--safe-bot));
+  display: flex; flex-direction: column; align-items: center;
+}
 .meter { width: min(220px, 58%); margin: 0 auto 6px; filter: drop-shadow(0 4px 0 #1a0b3a88); transition: opacity .2s; }
 .meter.dim { opacity: .4; }
 .meter-svg { width: 100%; height: auto; display: block; overflow: visible; }
@@ -199,7 +206,8 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 }
 .meter-panel {
   background: #1a0b3a88; border: 2px solid #ffffff33; border-radius: 14px;
-  padding: 4px 6px 3px; position: relative; transition: box-shadow .15s, border-color .15s, transform .15s;
+  padding: 4px 6px 3px; position: relative; z-index: 1;
+  transition: box-shadow .15s, border-color .15s, transform .15s;
 }
 .meter-panel.you-control { border-color: #ffd23f; box-shadow: 0 0 0 2px #ffd23f88, 0 0 14px #ffd23f44; }
 .meter-panel.role-atk { border-color: #ff7a9a; box-shadow: 0 0 0 2px #ff7a9a66, 0 0 12px #ff3b5c33; }
@@ -240,7 +248,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
   .round-score { font-size: 22px; padding: 3px 12px; }
 }
 
-.upgrade-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 120px; transition: max-height .28s ease, opacity .28s ease, margin .28s ease; }
+.upgrade-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-height: 120px; transition: max-height .28s ease, opacity .28s ease, margin .28s ease; }
 .upgrade-bar.gone {
   opacity: 0; pointer-events: none; max-height: 0; margin: 0; padding: 0;
   overflow: hidden; transform: none; /* collapse space so the meter drops during rounds */
@@ -338,7 +346,7 @@ h2, h3, .prompt, .vs, .level, .fc-name, .banner, .float-text, .result-title {
 @keyframes flash { from { opacity: .7; } to { opacity: 0; } }
 
 @media (max-height: 640px) {
-  .prompt { font-size: 24px; bottom: calc(132px + var(--safe-bot)); }
+  .prompt { font-size: 24px; margin-bottom: 8px; }
   .meter { width: min(190px, 52%); }
   .private-meter { width: min(190px, 56vw); max-width: 190px; }
   .round-score { top: calc(164px + var(--safe-top)); font-size: 22px; }
