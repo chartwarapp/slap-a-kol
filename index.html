@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#3a1480" />
+  <title>Slap-a-KOL</title>
+  <link rel="icon" type="image/jpeg" href="assets/slap-a-kol-logo-icon-square.jpg" />
+  <link rel="apple-touch-icon" href="assets/slap-a-kol-logo-icon-square.jpg" />
+  <!-- Chunky game font (optional – falls back to system fonts offline) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+  <!-- 3D canvas lives here -->
+  <div id="stage"></div>
+  <div id="webgl-error" class="hidden">WebGL is not available in this browser 😢</div>
+
+  <!-- Persistent top bar: settings + coin balance -->
+  <header id="topbar">
+    <img class="brand-badge" src="assets/slap-a-kol-logo-icon-square.jpg" alt="Slap-a-KOL" width="40" height="40" decoding="async" />
+    <button id="btn-settings" class="icon-btn" aria-label="Settings">⚙</button>
+    <button id="btn-leaderboard" class="icon-btn" aria-label="Leaderboard">🏆</button>
+    <div id="wallet-chip" class="wallet-chip hidden"><span class="dot"></span><span id="wallet-addr"></span></div>
+    <div class="pills">
+      <div class="coin-pill pts-pill" id="pts-pill" title="PTS — free play-to-earn points"><span class="pts">★</span><span id="points">0</span></div>
+    </div>
+  </header>
+
+  <!-- Pump/dump ticker scrolling across the top -->
+  <div id="ticker" class="ticker"><div id="ticker-track" class="ticker-track"></div></div>
+
+  <!-- ================= MENU ================= -->
+  <section id="screen-menu" class="screen active">
+    <h1 class="logo logo-splash">
+      <img class="logo-title" src="assets/slap-a-kol-logo-title-final.jpg" alt="Slap-a-KOL" width="720" height="360" decoding="async" />
+    </h1>
+    <div class="menu-inner">
+      <p class="tagline">Slap the shillers. Stack the <b>points</b>.</p>
+      <button id="btn-fighter" class="fighter-chip"><span id="fighter-chip-av"></span><span><b id="fighter-chip-name">YOU</b><small>EDIT MY FIGHTER</small></span></button>
+
+      <div class="menu-buttons">
+        <button id="btn-play" class="btn btn-yellow btn-xl pulse">🖐 SEND IT · FREE PLAY</button>
+        <button id="btn-pvp" class="btn btn-red">⚔ CHALLENGE A PLAYER<small class="btn-sub">PvP beta · AI stand-in if nobody's online</small></button>
+        <div class="row">
+          <button id="btn-connect" class="btn btn-purple">👛 CONNECT WALLET<small class="btn-sub">Solana · coming soon</small></button>
+          <button id="btn-vault" class="btn btn-green">🏦 STAKE PTS<small class="btn-sub" id="vault-sub">earn yield + boost</small></button>
+        </div>
+        <button id="btn-rescue" class="btn btn-grey hidden">🛟 BROKE? CLAIM FREE PTS</button>
+      </div>
+      <div id="menu-stats" class="menu-stats"></div>
+      <p class="fine">Free to play · earn PTS · bet &amp; stake PTS · wallet is a mock Solana placeholder<br>All KOLs are fictional parody cartoons — not affiliated with or depicting real people.</p>
+    </div>
+  </section>
+
+  <!-- ================= KOL PICKER ================= -->
+  <section id="screen-pick" class="screen">
+    <div class="pick-header">
+      <button class="icon-btn" data-nav="menu" aria-label="Back">←</button>
+      <h2>CHOOSE YOUR KOL</h2>
+    </div>
+    <div class="pick-sheet">
+      <div id="kol-detail" class="kol-detail"></div>
+      <div id="kol-list" class="kol-list"></div>
+      <div id="mode-row" class="mode-row"></div>
+      <div class="bet-row">
+        <div class="bet-label">OPTIONAL BET (PTS) <span id="bet-hint"></span></div>
+        <div id="bet-chips" class="bet-chips"></div>
+      </div>
+      <button id="btn-challenge" class="btn btn-red btn-xl">CHALLENGE</button>
+    </div>
+  </section>
+
+  <!-- ================= FIGHT HUD ================= -->
+  <section id="screen-fight" class="screen">
+    <div class="vs-bar">
+      <div class="fighter-card left">
+        <div class="portrait" id="p-portrait"></div>
+        <div class="fc-info">
+          <div class="fc-name" id="p-name">YOU</div>
+          <div class="hp"><div class="hp-lag" id="p-hp-lag"></div><div class="hp-fill" id="p-hp"></div><span class="hp-txt" id="p-hp-txt"></span></div>
+        </div>
+      </div>
+      <div class="vs-center">
+        <div class="vs">VS</div>
+        <div class="level" id="fight-level">LEVEL 1</div>
+      </div>
+      <div class="fighter-card right">
+        <div class="fc-info">
+          <div class="fc-name" id="k-name">KOL</div>
+          <div class="hp"><div class="hp-lag" id="k-hp-lag"></div><div class="hp-fill" id="k-hp"></div><span class="hp-txt" id="k-hp-txt"></span></div>
+        </div>
+        <div class="portrait" id="k-portrait"></div>
+      </div>
+    </div>
+    <div class="stake-tag" id="stake-tag"></div>
+
+    <div id="taunt" class="taunt hidden"></div>
+    <div id="p-taunt" class="taunt left hidden"></div>
+    <div id="prompt" class="prompt">TAP TO SLAP</div>
+
+    <!-- brace timing ring during the KOL's turn -->
+    <div id="brace" class="brace hidden"><div class="brace-target"></div><div class="brace-ring" id="brace-ring"></div><span>BRACE!</span></div>
+
+    <!-- Power-up rail (limited-use consumables) -->
+    <div id="powerups" class="pu-rail"></div>
+    <div id="pu-status" class="pu-status"></div>
+
+    <div class="bottom-zone">
+      <div id="meter" class="meter"></div>
+      <div id="upgrade-bar" class="upgrade-bar">
+        <button class="upg-btn upg-health" data-upgrade="health">
+          <span class="upg-ico">❤</span><span class="upg-title">HEALTH</span>
+          <span class="upg-lvl" data-lvl></span><span class="upg-cost"><span class="pts sm">★</span><b data-cost></b></span>
+        </button>
+        <button class="upg-btn upg-power" data-upgrade="power">
+          <span class="upg-ico">✊</span><span class="upg-title">POWER</span>
+          <span class="upg-lvl" data-lvl></span><span class="upg-cost"><span class="pts sm">★</span><b data-cost></b></span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= RESULT ================= -->
+  <section id="screen-result" class="screen overlay">
+    <div class="result-card" id="result-card"></div>
+  </section>
+
+  <!-- ================= MODALS ================= -->
+  <div id="modal-wallet" class="modal hidden">
+    <div class="modal-card wallet-card">
+      <div class="wallet-logo">👻</div>
+      <h3>Mock Wallet</h3>
+      <p><b>Slap-a-KOL</b> wants to connect.</p>
+      <ul class="perm"><li>✔ View your mock address</li><li>✔ Link future rewards to this wallet</li></ul>
+      <p class="fine">Placeholder for Solana (Phantom) integration later. No real keys, tokens or funds — the game runs on in-game points.</p>
+      <div class="row">
+        <button class="btn btn-grey" id="wallet-cancel">Cancel</button>
+        <button class="btn btn-purple" id="wallet-approve">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-vault" class="modal hidden">
+    <div class="modal-card vault-card">
+      <h3>🏦 STAKE VAULT</h3>
+      <p class="fine dark">Stake PTS to earn PTS yield and boost every reward (wins + bet payouts). In-game points only for now.</p>
+      <div class="vault-stats">
+        <div><small>STAKED</small><b id="v-staked">0</b></div>
+        <div><small>APR</small><b id="v-apr">24%</b></div>
+        <div><small>YIELD</small><b id="v-yield">0.00</b></div>
+      </div>
+      <div class="vault-tier" id="v-tier"></div>
+      <div class="tier-list" id="v-tiers"></div>
+      <div class="vault-amounts" id="v-amounts"></div>
+      <div class="row">
+        <button class="btn btn-green" id="v-stake">STAKE</button>
+        <button class="btn btn-grey" id="v-unstake">UNSTAKE</button>
+      </div>
+      <button class="btn btn-yellow" id="v-claim">CLAIM YIELD</button>
+      <p class="fine dark" id="v-note"></p>
+      <button class="btn btn-grey" data-close>CLOSE</button>
+    </div>
+  </div>
+
+  <div id="modal-submit" class="modal hidden">
+    <form class="modal-card submit-card" id="submit-form" autocomplete="off">
+      <h3>✍ SUBMIT A KOL</h3>
+      <div class="submit-top">
+        <div id="sub-preview" class="sub-preview"></div>
+        <div class="sub-fields">
+          <label>Name<input id="sub-name" maxlength="16" placeholder="e.g. Shillvester" required /></label>
+          <label>Catchphrase<input id="sub-phrase" maxlength="60" placeholder="e.g. Wen lambo? Wen slap!" required /></label>
+        </div>
+      </div>
+      <div class="swatch-row"><span>Colour</span><div class="swatches" data-key="shirt"></div></div>
+      <p class="fine dark">Keep it a playful parody: no real photos, no exact handles, nothing hateful. Look &amp; stats auto-generate from the name.</p>
+      <p class="fine dark" id="sub-slots"></p>
+      <div class="row">
+        <button type="button" class="btn btn-grey" data-close>Cancel</button>
+        <button type="submit" class="btn btn-green" id="sub-save">ADD TO ROSTER</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="modal-pvp" class="modal hidden">
+    <div class="modal-card pvp-card">
+      <h3>⚔ PVP LOBBY</h3>
+      <div id="pvp-lobby">
+        <p class="fine dark">Live PvP is in beta. If no one accepts, an <b>AI stand-in</b> fights in their place. Wagers are in PTS.</p>
+        <div id="pvp-modes" class="mode-row light"></div>
+        <div class="bet-label dark-lbl">WAGER <span id="pvp-wager-hint"></span></div>
+        <div id="pvp-bets" class="bet-chips light"></div>
+        <div class="pvp-head"><span>🟢 ONLINE DEGENS</span><span id="pvp-count"></span></div>
+        <div id="pvp-list" class="pvp-list"></div>
+        <button class="btn btn-yellow" id="pvp-quick">⚡ QUICK MATCH</button>
+        <button class="btn btn-grey" data-close>CLOSE</button>
+      </div>
+      <div id="pvp-search" class="pvp-search hidden">
+        <div class="radar"><div class="sweep"></div><span>🖐</span></div>
+        <div id="pvp-status" class="pvp-status">Finding opponent…</div>
+        <div id="pvp-timer" class="pvp-timer">0:00</div>
+        <button class="btn btn-grey" id="pvp-cancel">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-fighter" class="modal hidden">
+    <form class="modal-card submit-card" id="fighter-form" autocomplete="off">
+      <h3>👤 MY FIGHTER</h3>
+      <div class="submit-top">
+        <div id="fit-preview" class="sub-preview"></div>
+        <div class="sub-fields">
+          <label>Name<input id="fit-name" maxlength="16" placeholder="e.g. CheekSniper" required /></label>
+          <label>Catchphrase<input id="fit-phrase" maxlength="60" placeholder="e.g. Few understand this slap." required /></label>
+        </div>
+      </div>
+      <div class="swatch-row"><span>Colour</span><div class="swatches" id="fit-colours"></div></div>
+      <p class="fine dark">Your fighter shows on the LEFT in every fight. Face &amp; hair auto-generate from your name.</p>
+      <div class="row">
+        <button type="button" class="btn btn-grey" data-close>Later</button>
+        <button type="submit" class="btn btn-green">LFG 🚀</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="modal-lb" class="modal hidden">
+    <div class="modal-card lb-card">
+      <h3>🏆 LEADERBOARD</h3>
+      <div class="lb-tabs"><button data-tab="global" class="on">GLOBAL</button><button data-tab="friends">FRIENDS</button></div>
+      <p class="fine dark" id="lb-note"></p>
+      <div id="lb-list" class="lb-list"></div>
+      <button class="btn btn-purple hidden" id="lb-invite">📨 COPY INVITE LINK</button>
+      <button class="btn btn-grey" data-close>CLOSE</button>
+    </div>
+  </div>
+
+  <div id="modal-settings" class="modal hidden">
+    <div class="modal-card">
+      <h3>SETTINGS</h3>
+      <label class="toggle"><input type="checkbox" id="set-sound" /> <span>Sound</span></label>
+      <label class="toggle"><input type="checkbox" id="set-haptics" /> <span>Vibration</span></label>
+      <div class="set-wallet" id="set-wallet"></div>
+      <button class="btn btn-red hidden" id="btn-forfeit">🏳 Forfeit fight</button>
+      <button class="btn btn-grey" id="btn-disconnect">Disconnect wallet</button>
+      <button class="btn btn-grey" id="btn-reset">Reset progress</button>
+      <button class="btn btn-yellow" id="btn-close-settings">CLOSE</button>
+    </div>
+  </div>
+
+  <div id="fx-layer"></div>
+  <div id="banner" class="banner hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<!-- Three.js r158 (classic build, vendored so the game works offline / from file://) -->
+<script src="vendor/three.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/roster.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/wallet.js"></script>
+<script src="js/economy.js"></script>
+<script src="js/matchmaking.js"></script>
+<script src="js/leaderboard.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/avatars.js"></script>
+<script src="js/scene3d.js"></script>
+<script src="js/meter.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
