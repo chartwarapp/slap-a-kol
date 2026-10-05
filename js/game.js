@@ -570,7 +570,9 @@
     const C = F.challenge;
     el.classList.remove('hidden');
     el.innerHTML = `<span class="rs-p">${C.pWins}</span><span class="sep">—</span><span class="rs-k">${C.kWins}</span>`
-      + `<span class="rs-meta">ROUND ${Math.min(C.round + (F.turn === 'challenge' ? 0 : 1), C.bestOf)} · FIRST TO ${C.winsNeeded}</span>`;
+      // ROUND label = the round in play; it only advances when startChallengeRound() bumps C.round
+      // (score may update at resolve, but the label holds through reveal, slap and KO)
+      + `<span class="rs-meta">ROUND ${Math.max(1, Math.min(C.round, C.bestOf))} · FIRST TO ${C.winsNeeded}</span>`;
     // Mirror score onto HP bars so the VS bar still feels alive
     const pPct = (C.pWins / C.winsNeeded) * 100;
     const kPct = (C.kWins / C.winsNeeded) * 100;
