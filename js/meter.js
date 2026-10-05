@@ -36,7 +36,7 @@ SAK.createMeter = function (el, opts) {
     });
     const label = opts.label ? `<text x="100" y="108" text-anchor="middle" class="meter-role-label">${opts.label}</text>` : '';
     el.innerHTML = `
-      <svg viewBox="0 0 200 118" class="meter-svg">
+      <svg viewBox="0 2 200 112" class="meter-svg" preserveAspectRatio="xMidYMid meet">
         <path d="${arcPath(-90, 90, R)}" stroke="#2a1458" stroke-width="${W + 12}" fill="none" stroke-linecap="round"/>
         ${segs}${ticks}
         <path d="${arcPath(-90, 90, R + W / 2 + 1)}" stroke="#fff" stroke-width="3" fill="none" opacity=".9"/>
